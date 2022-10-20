@@ -114,7 +114,7 @@ function Test-SmtpClientSubmission() {
             if ($null -eq $token -or $token.Length -eq 0) {
                 return;
             }
-        
+
             $authSuccess = XOAUTH2Login($token.AccessToken)
         }
         # Else if no client id check if credentials are available and use legacy auth
@@ -152,18 +152,18 @@ function Test-SmtpClientSubmission() {
     }
 }
 function Connect() {
-    Write-Host -ForegroundColor Yellow "[Connecting]" 
+    Write-Host -ForegroundColor Yellow "[Connecting]"
     $Script:tcpClient = New-Object System.Net.Sockets.TcpClient;
     $Script:tcpClient.ReceiveTimeout = 10000
     $Script:tcpClient.Connect($SmtpServer, $Port);
     Write-Host -ForegroundColor Green "[Connected]"
-    
+
     $Script:reader = New-Object System.IO.StreamReader::($Script:tcpClient.GetStream())
     $Script:writer = New-Object System.IO.StreamWriter::($Script:tcpClient.GetStream())
 
     ReadResponse
     SendEhlo
-    
+
     if ($UseSsl) {
         Write-Verbose "Starting TLS..."
         if ($Script:sessionCapabilities.Contains("STARTTLS")) {
@@ -190,7 +190,7 @@ function Connect() {
                 SendEhlo;
             }
             else {
-                Write-Error "Failed to start tls session with remote host."; 
+                Write-Error "Failed to start tls session with remote host."
             }
         }
         # STARTTLS verb not found
@@ -240,12 +240,12 @@ function SendEhlo() {
         # Skip banner
         $lines = $Script:smtpResponse.Split(',') | Where-Object { ($_) -and ($_ -notcontains "250") }
 
-        # Clear any previous capabilities        
+        # Clear any previous capabilities
         $Script:sessionCapabilities = $null
         $Script:sessionCapabilities = $lines
     }
     else {
-        Write-Host "SMTP Command EHLO failed. Response Code: " $Script:responseCode
+        Write-Output "SMTP Command EHLO failed. Response Code: " $Script:responseCode
     }
 }
 function SmtpCmd([string]$command, [bool]$redactCmd) {
@@ -307,11 +307,10 @@ function AuthLogin() {
             return $true
         }
         else {
-            Write-Error "Unexpected response code on AUTH LOGIN." 
+            Write-Error "Unexpected response code on AUTH LOGIN."
         }
     }
     else {
-        
         Write-Error "Session capabilities do not support AUTH LOGIN"
     }
     return $false
@@ -338,12 +337,11 @@ function XOAUTH2Login([string]$token) {
             }
         }
         else {
-            Write-Error "Unexpected response code." 
+            Write-Error "Unexpected response code."
             return $false
         }
     }
     else {
-        
         Write-Error "Session capabilities do not support AUTH XOAUTH2"
         return $false
     }
@@ -408,7 +406,7 @@ function SendMail() {
 function WriteMessage($message) {
     # Format output
     $out = (Get-Date).ToUniversalTime().ToString() + " " + $message
-    Write-Host $out
+    Write-Output $out
 
     # Save to variable for logging
     $Script:LogVar += $out
