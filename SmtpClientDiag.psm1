@@ -127,13 +127,16 @@ function Test-SmtpClientSubmission() {
         }
         # Send mail
         if ($authSuccess -eq $true) {
+            Write-Verbose "AUTH LOGIN success"
             SendMail
         }
 
         # If force switch true, send mail anyway if auth failed or no creds available
         if ($authSuccess -eq $false -and $Force -eq $true) {
+            Write-Verbose "Forcing mail submission"
             SendMail
         }
+        Write-Verbose "Done."
     }
     catch {
         # Display last exception
@@ -144,6 +147,14 @@ function Test-SmtpClientSubmission() {
         if ($null -ne $Script:reader) { $Script:reader.Dispose() }
         if ($null -ne $Script:writer) { $Script:writer.Dispose() }
         if ($null -ne $Script:tcpClient) { $Script:tcpClient.Dispose() }
+
+        # Reset/clear variables
+        $Script:reader = $null
+        $Script:writer = $null
+        $Script:responseCode = 0;
+        $Script:smtpResponse = $null
+        $Script:sessionCapabilities = $null
+
         Write-Verbose "Resources disposed."
         Write-Host -ForegroundColor Red "[Disconnected]"
 
@@ -210,7 +221,6 @@ function ReadResponse() {
         return;
     }
 
-    Write-Verbose "Reading stream..."
     $line = $reader.ReadLine();
 
     if ($null -eq $line) {
@@ -224,6 +234,7 @@ function ReadResponse() {
 
     # Read all lines
     while ($Script:reader.Peek() -gt 0) {
+        Write-Verbose "StreamReader: Reading more lines..."
         $line = $Script:reader.ReadLine();
         if ($null -eq $line) {
             Write-Error("End of stream.");
@@ -245,7 +256,7 @@ function SendEhlo() {
         $Script:sessionCapabilities = $lines
     }
     else {
-        Write-Output "SMTP Command EHLO failed. Response Code: " $Script:responseCode
+        Write-Host "SMTP Command EHLO failed. Response Code: " $Script:responseCode
     }
 }
 function SmtpCmd([string]$command, [bool]$redactCmd) {
@@ -288,7 +299,7 @@ function AuthLogin() {
             if ($message -eq "username:") {
                 SmtpCmd ([System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($Credential.UserName)))
             }
-
+            # Decode the response
             $message = [System.Text.Encoding]::ASCII.GetString([System.Convert]::FromBase64String($Script:smtpResponse.Substring(4))).ToLower();
 
             # If username accepted continue
@@ -406,7 +417,7 @@ function SendMail() {
 function WriteMessage($message) {
     # Format output
     $out = (Get-Date).ToUniversalTime().ToString() + " " + $message
-    Write-Output $out
+    Write-Host $out
 
     # Save to variable for logging
     $Script:LogVar += $out
@@ -423,4 +434,3 @@ function WriteFile() {
     $Script:LogVar += "---End of Session---"
     $Script:LogVar | Out-File -FilePath $filePath -Append -Force
 }
-Export-ModuleMember -Function Test-SmtpClientSubmission
