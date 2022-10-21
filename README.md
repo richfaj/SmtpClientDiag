@@ -6,7 +6,7 @@ The module supports both Basic (AUTH LOGIN) and OAuth (XOAUTH2) authentication. 
 ## Getting Started
 Execute the cmdlet below to install the module.
 
-  Install-Module -Name SmtpClientDiag -MinimumVersion 1.0.0.8
+  Install-Module -Name SmtpClientDiag -MinimumVersion 1.0.0.9
   
 ## Examples: 
 
