@@ -11,13 +11,13 @@ Execute the cmdlet below to install the module.
 ## Examples: 
 
 Submit mail without credentials.
-> Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -UseSsl -SmtpServer smtp.office365.com -Port 25 -Force
+> Test-SmtpClientSubmission -From \<FromAddress\> -To \<RecipientAddress\> -UseSsl -SmtpServer smtp.office365.com -Port 25 -Force
 
 Submit mail using legacy authentication.
 
-> Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -UseSsl -SmtpServer smtp.office365.com -Port 587 -Credential <PSCredential>
+> Test-SmtpClientSubmission -From \<FromAddress\> -To \<RecipientAddress\> -UseSsl -SmtpServer smtp.office365.com -Port 587 -Credential \<PSCredential\>
 
 Submit mail using modern authentication.
 
-> Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -UseSsl -SmtpServer smtp.office365.com -Port 587 -UserName <MailboxSmtp> -ClientId 9954180a-16f4-4683-aaaaaaaaaaaa -TenantId 1da8c747-60dd-4404-8418-aaaaaaaaaaaa
+> Test-SmtpClientSubmission -From \<FromAddress\> -To \<RecipientAddress\> -UseSsl -SmtpServer smtp.office365.com -Port 587 -UserName \<MailboxSmtp\> -ClientId 9954180a-16f4-4683-aaaaaaaaaaaa -TenantId 1da8c747-60dd-4404-8418-aaaaaaaaaaaa
 
