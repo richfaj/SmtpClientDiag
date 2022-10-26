@@ -140,7 +140,8 @@ function Test-SmtpClientSubmission() {
     }
     catch {
         # Display last exception
-        $error[0].Exception | Format-List * -Force
+        WriteMessage($_)
+        Write-Error -ErrorRecord $_
     }
     finally {
         <#Do this after the try block regardless of whether an exception occurred or not#>
@@ -164,9 +165,23 @@ function Test-SmtpClientSubmission() {
 }
 function Connect() {
     Write-Host -ForegroundColor Yellow "[Connecting]"
+    $Script:LogVar += "Connecting to $SmtpServer"+":$Port"
+
     $Script:tcpClient = New-Object System.Net.Sockets.TcpClient;
     $Script:tcpClient.ReceiveTimeout = 10000
-    $Script:tcpClient.Connect($SmtpServer, $Port);
+    $Script:tcpClient.SendTimeout = 10000
+
+    $result = $Script:tcpClient.BeginConnect($SmtpServer, $Port, $null, $null)
+    $result.AsyncWaitHandle.WaitOne(10000) | Out-Null
+
+    if(!$Script:tcpClient.Connected)
+    {
+        Write-Error "Connection to remote host timed out after 10000 ms." -ErrorAction Stop
+    }
+    else {
+        $Script:tcpClient.EndConnect($result)
+    }
+
     Write-Host -ForegroundColor Green "[Connected]"
 
     $Script:reader = New-Object System.IO.StreamReader::($Script:tcpClient.GetStream())
