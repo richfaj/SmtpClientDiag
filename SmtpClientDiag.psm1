@@ -1,4 +1,28 @@
 <#
+MIT License
+
+Copyright (c) 2022 Richard Fajardo
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+#>
+
+<#
  .Synopsis
   Diagnostic module for testing SMTP client submission.
 
@@ -54,11 +78,35 @@ function Test-SmtpClientSubmission() {
     param(
         [CmdletBinding(DefaultParameterSetName = 'LegacyAuth')]
         [Parameter(Mandatory = $true)]
+        [ValidateScript({
+                try {
+                    $null = [mailaddress]$_
+                    return $true
+                }
+                catch {
+                    # Throw away exception
+                }
+        
+                throw "The specified string is not in the form required for an e-mail address."
+            })]
         [string] $From,
         [Parameter(Mandatory = $true)]
+        [ValidateScript({
+                try {
+                    $null = [mailaddress]$_
+                    return $true
+                }
+                catch {
+                    # Throw away exception
+                }
+        
+                throw "The specified string is not in the form required for an e-mail address."
+            })]
         [string] $To,
         [Parameter(Mandatory = $false)]
         [switch] $UseSsl,
+        [Parameter(Mandatory = $false)]
+        [switch] $AcceptUntrustedCertificates,
         [Parameter(Mandatory = $true)]
         [string] $SmtpServer,
         [Parameter(Mandatory = $false)]
@@ -68,18 +116,57 @@ function Test-SmtpClientSubmission() {
         [Parameter(Mandatory = $false, ParameterSetName = "Token")]
         [string] $AccessToken = $null,
         [Parameter(Mandatory = $true, ParameterSetName = "OAuth_app")]
+        [ValidateScript({
+                try {
+                    $null = [mailaddress]$_
+                    return $true
+                }
+                catch {
+                    # Throw away exception
+                }
+        
+                throw "The specified string is not in the form required for an e-mail address."
+            })]
         [string] $UserName,
         [Parameter(Mandatory = $true, ParameterSetName = "OAuth_app")]
-        [string] $ClientId,
+        [ValidateScript({
+                try {
+                    [System.Guid]::Parse($_) | Out-Null
+                    $true
+                }
+                catch {
+                    $false
+                }
+            })]
+        [guid] $ClientId,
         [Parameter(Mandatory = $true, ParameterSetName = "OAuth_app")]
-        [string] $TenantId,
+        [ValidateScript({
+                try {
+                    [System.Guid]::Parse($_) | Out-Null
+                    $true
+                }
+                catch {
+                    $false
+                }
+            })]
+        [guid] $TenantId,
+        [Parameter(Mandatory = $false)]
+        [ValidateScript({
+                if (Test-Path $_ -PathType Container) {
+                    $true
+                }
+                else {
+                    throw "The location '$_' does not exist. Check the path exist and try again."
+                }
+            })]
+        [string] $LogPath,
         [Parameter(Mandatory = $false)]
         [switch] $Force
     )
 
     [System.IO.StreamReader]$Script:reader
     [System.IO.StreamWriter]$Script:writer
-    [int]$Script:responseCode = 0;
+    [int]$Script:responseCode = 0
     [string]$Script:smtpResponse
     [string[]]$Script:sessionCapabilities
     [System.Collections.Generic.List[PSObject]]$Script:LogVar = @()
@@ -99,28 +186,29 @@ function Test-SmtpClientSubmission() {
         [bool]$authSuccess = $false
 
         # Use OAUTH if the client id was supplied
-        if ($null -ne $ClientId -and $ClientId.Length -ne 0) {
-            Connect
+        if (-not [System.String]::IsNullOrEmpty($ClientId)) {
+            Write-Host -ForegroundColor Yellow "[Requesting token]"
             # Check if dependency module exist
             Import-Module MSAL.PS -ErrorAction SilentlyContinue
             $module = Get-Module MSAL.PS
-            if ($null -eq $module -or $module.Count -eq 0) {
-                Write-Error "MSAL.PS module is required for obtaining an access token. Install the missing dependency."
+            if ([System.String]::IsNullOrEmpty($module)) {
+                WriteError -Message "MSAL.PS module is required for obtaining an access token. Install the missing dependency using Install-Module MSAL.PS."
                 return
             }
 
             # Obtain an access token first
             $token = GetAccessToken
-            if ($null -eq $token -or $token.Length -eq 0) {
-                return;
+            if ([System.String]::IsNullOrEmpty($token)) {
+                return
             }
 
+            Connect
             $authSuccess = XOAUTH2Login($token.AccessToken)
         }
         # Else if no client id check if credentials are available and use legacy auth
         else {
             Connect
-            if ($Credential.Length -ne 0) {
+            if (-not [System.String]::IsNullOrEmpty($Credential)) {
                 # Legacy auth
                 $authSuccess = AuthLogin
             }
@@ -152,11 +240,11 @@ function Test-SmtpClientSubmission() {
         # Reset/clear variables
         $Script:reader = $null
         $Script:writer = $null
-        $Script:responseCode = 0;
+        $Script:responseCode = 0
         $Script:smtpResponse = $null
         $Script:sessionCapabilities = $null
 
-        Write-Verbose "Resources disposed."
+        Write-Debug "Resources disposed."
         Write-Host -ForegroundColor Red "[Disconnected]"
 
         # Write log to file
@@ -164,19 +252,19 @@ function Test-SmtpClientSubmission() {
     }
 }
 function Connect() {
-    Write-Host -ForegroundColor Yellow "[Connecting]"
-    $Script:LogVar += "Connecting to $SmtpServer"+":$Port"
+    Write-Host -ForegroundColor Yellow ("[Connecting to $SmtpServer" + ":$Port]")
+    $Script:LogVar += "Connecting to $SmtpServer" + ":$Port"
 
-    $Script:tcpClient = New-Object System.Net.Sockets.TcpClient;
+    $Script:tcpClient = New-Object System.Net.Sockets.TcpClient
     $Script:tcpClient.ReceiveTimeout = 10000
     $Script:tcpClient.SendTimeout = 10000
 
     $result = $Script:tcpClient.BeginConnect($SmtpServer, $Port, $null, $null)
     $result.AsyncWaitHandle.WaitOne(10000) | Out-Null
 
-    if(!$Script:tcpClient.Connected)
-    {
-        Write-Error "Connection to remote host timed out after 10000 ms." -ErrorAction Stop
+    if (!$Script:tcpClient.Connected) {
+        $remoteHostString = $SmtpServer + ":" + $Port
+        WriteError -Message "Connection to remote host $remoteHostString timed out after 10s." -StopError $true
     }
     else {
         $Script:tcpClient.EndConnect($result)
@@ -193,17 +281,23 @@ function Connect() {
     if ($UseSsl) {
         Write-Verbose "Starting TLS..."
         if ($Script:sessionCapabilities.Contains("STARTTLS")) {
-            SmtpCmd("STARTTLS");
+            SmtpCmd("STARTTLS")
             if ($Script:responseCode -eq 220) {
                 WriteMessage("* Starting TLS negotation")
-                $sslstream = New-Object System.Net.Security.SslStream::($Script:tcpClient.GetStream())
+                if ($AcceptUntrustedCertificates) {
+                    Write-Verbose "Ignoring certificate validation results."
+                    $sslstream = New-Object System.Net.Security.SslStream::($Script:tcpClient.GetStream(), $false, ({ $true } -as [Net.Security.RemoteCertificateValidationCallback]))
+                }
+                else {
+                    $sslstream = New-Object System.Net.Security.SslStream::($Script:tcpClient.GetStream())
+                }
                 $sslstream.AuthenticateAsClient($SmtpServer)
 
                 $Script:writer = New-Object System.IO.StreamWriter::($sslstream)
                 $Script:reader = New-Object System.IO.StreamReader::($sslstream)
 
                 WriteMessage("* TLS negotiation completed." + " CipherAlgorithm:" + $sslstream.CipherAlgorithm + " TlsVersion:" + $sslstream.SslProtocol)
-                WriteMessage("* RemoteCertificate: " + "<S>" + $sslstream.RemoteCertificate.Subject + "<I>" + $sslstream.RemoteCertificate.Issuer)
+                WriteMessage("* RemoteCertificate: IgnoreCertValidation:$AcceptUntrustedCertificates " + "<S>" + $sslstream.RemoteCertificate.Subject + "<I>" + $sslstream.RemoteCertificate.Issuer)
 
                 $rawCert = "`n-----BEGIN CERTIFICATE-----"
                 $rawCert += "`n" + [Convert]::ToBase64String($sslstream.RemoteCertificate.GetRawCertData())
@@ -213,51 +307,51 @@ function Connect() {
                 Write-Verbose $rawCert
 
                 # Rediscover session capabilities
-                SendEhlo;
+                SendEhlo
             }
             else {
-                Write-Error "Failed to start tls session with remote host."
+                WriteError -Message "Failed to start tls session with remote host."
             }
         }
         # STARTTLS verb not found
         else {
-            Write-Error "Session capabilities do not support STARTTLS."
+            WriteError -Message "Session capabilities do not support STARTTLS."
         }
     }
 }
 function ReadResponse() {
     # Clear any prior responses and response codes
-    $Script:responseCode = -1;
-    $Script:smtpResponse = $null;
+    $Script:responseCode = -1
+    $Script:smtpResponse = $null
 
     # Bail if not connected
     if ($Script:tcpClient.Connected -eq $false) {
-        WriteMessage("Client is not connected.");
-        return;
+        WriteMessage("Client is not connected.")
+        return
     }
 
-    $line = $reader.ReadLine();
+    $line = $reader.ReadLine()
 
-    if ($null -eq $line) {
-        return $responseCode;
+    if ([System.String]::IsNullOrEmpty($line)) {
+        return $responseCode
     }
 
-    $Script:smtpResponse += $line;
+    $Script:smtpResponse += $line
 
     # Parse response code
-    $Script:responseCode = [System.Int32]::Parse($line.Substring(0, 3));
+    $Script:responseCode = [System.Int32]::Parse($line.Substring(0, 3))
 
     # Read all lines
     while ($Script:reader.Peek() -gt 0) {
-        Write-Verbose "StreamReader: Reading more lines..."
-        $line = $Script:reader.ReadLine();
-        if ($null -eq $line) {
-            Write-Error("End of stream.");
+        Write-Debug "StreamReader: Reading more lines..."
+        $line = $Script:reader.ReadLine()
+        if ([System.String]::IsNullOrEmpty($line)) {
+            WriteError -Message "End of stream."
         }
-        $Script:smtpResponse += "," + $line.Substring(4);
+        $Script:smtpResponse += "," + $line.Substring(4)
     }
 
-    WriteMessage("< " + $Script:smtpResponse);
+    WriteMessage("< " + $Script:smtpResponse)
 }
 function SendEhlo() {
     SmtpCmd("EHLO " + ([System.Environment]::MachineName))
@@ -285,12 +379,12 @@ function SmtpCmd([string]$command, [bool]$redactCmd) {
     }
 
     if ($null -eq $Script:writer) {
-        Write-Error "StreamWriter is null"
+        WriteError -Message "StreamWriter is null"
         return
     }
 
-    $Script:writer.WriteLine($command);
-    $Script:writer.Flush();
+    $Script:writer.WriteLine($command)
+    $Script:writer.Flush()
 
     if (($command -ne "QUIT") -and (!$command.StartsWith("BDAT"))) {
         ReadResponse
@@ -307,53 +401,53 @@ function ContainsCapability([string] $c) {
 }
 function AuthLogin() {
     if (ContainsCapability("AUTH LOGIN")) {
-        SmtpCmd("AUTH LOGIN");
+        SmtpCmd("AUTH LOGIN")
 
         if ($Script:responseCode -eq 334) {
-            $message = [System.Text.Encoding]::ASCII.GetString([System.Convert]::FromBase64String($Script:smtpResponse.Substring(4))).ToLower();
+            $message = [System.Text.Encoding]::ASCII.GetString([System.Convert]::FromBase64String($Script:smtpResponse.Substring(4))).ToLower()
             if ($message -eq "username:") {
                 SmtpCmd ([System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($Credential.UserName)))
             }
             # Decode the response
-            $message = [System.Text.Encoding]::ASCII.GetString([System.Convert]::FromBase64String($Script:smtpResponse.Substring(4))).ToLower();
+            $message = [System.Text.Encoding]::ASCII.GetString([System.Convert]::FromBase64String($Script:smtpResponse.Substring(4))).ToLower()
 
             # If username accepted continue
             if (($Script:responseCode -eq 334) -and ($message -eq "password:")) {
                 SmtpCmd ([System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($Credential.GetNetworkCredential().Password))) -redactCmd $true
             }
             else {
-                Write-Error "SMTP Authentication Failed. Invalid user name."
+                WriteError -Message "SMTP Authentication Failed. Invalid user name."
                 return $false
             }
             if ($Script:responseCode -ne 235) {
-                Write-Error "SMTP Authentication Failed. Check user name and password."
+                WriteError -Message "SMTP Authentication Failed. Check user name and password."
                 return $false
             }
 
             return $true
         }
         else {
-            Write-Error "Unexpected response code on AUTH LOGIN."
+            WriteError -Message "Unexpected response code on AUTH LOGIN."
         }
     }
     else {
-        Write-Error "Session capabilities do not support AUTH LOGIN"
+        WriteMessage -Message "Session capabilities do not support AUTH LOGIN"
     }
     return $false
 }
 function XOAUTH2Login([string]$token) {
-    if ($null -eq $token -or $token.Length -eq 0) {
-        Write-Error "AccessToken is null or empty"
+    if ([System.String]::IsNullOrEmpty($token)) {
+        WriteError -Message "AccessToken is null or empty"
         return
     }
     # Build the token
     $authBlob = "user=" + $UserName + "$([char]0x01)auth=Bearer " + $token + "$([char]0x01)$([char]0x01)"
 
     if (ContainsCapability("XOAUTH2")) {
-        SmtpCmd("AUTH XOAUTH2");
+        SmtpCmd("AUTH XOAUTH2")
 
         if ($Script:responseCode -eq 334) {
-            SmtpCmd([System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($authBlob)))
+            SmtpCmd([System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($authBlob)))
 
             if ($Script:responseCode -eq 235) {
                 return $true
@@ -363,18 +457,18 @@ function XOAUTH2Login([string]$token) {
             }
         }
         else {
-            Write-Error "Unexpected response code."
+            WriteError -Message "Unexpected response code."
             return $false
         }
     }
     else {
-        Write-Error "Session capabilities do not support AUTH XOAUTH2"
+        WriteError -Message "Session capabilities do not support AUTH XOAUTH2."
         return $false
     }
 }
 function GetAccessToken() {
     # Use supplied token instead if provided
-    if ($AccessToken.Length -ne 0) {
+    if (-not [System.String]::IsNullOrEmpty($AccessToken)) {
         Write-Verbose "User supplied AccessToken. Not fetching new token."
         return $AccessToken
     }
@@ -382,9 +476,8 @@ function GetAccessToken() {
         Write-Verbose "Obtaining an access token using MSAL.PS module"
 
         $token = Get-MsalToken -ClientId $ClientId -TenantId $TenantId -Interactive -Scope 'https://outlook.office365.com/Smtp.Send' -LoginHint $UserName
-        if ($token.AccessToken.Length -eq 0) {
-            Write-Error "No token was available in the token request result"
-            return
+        if ([System.String]::IsNullOrEmpty($token.AccessToken)) {
+            WriteError -Message "No token was available in the token request result". -StopError $true
         }
 
         return $token
@@ -393,15 +486,15 @@ function GetAccessToken() {
 function SendMail() {
     SmtpCmd("MAIL FROM: <$From>")
     if ($Script:responseCode -ne 250) {
-        Write-Error "Unexpected response code on MAIL FROM command."
-        SmtpCmd("QUIT");
+        WriteError -Message "Unexpected response code on MAIL FROM command."
+        SmtpCmd("QUIT")
         return
     }
 
     SmtpCmd("RCPT TO: <$To>")
     if ($Script:responseCode -ne 250) {
-        Write-Error "Unexpected response code on TO command."
-        SmtpCmd("QUIT");
+        WriteError -Message "Unexpected response code on TO command."
+        SmtpCmd("QUIT")
         return
     }
 
@@ -418,16 +511,34 @@ function SendMail() {
     SmtpCmd($command)
 
     Write-Verbose "Writing message to stream..."
-    $Script:writer.Write($message);
-    $Script:writer.Flush();
+    $Script:writer.Write($message)
+    $Script:writer.Flush()
 
     ReadResponse
     
     if ($Script:responseCode -ne 250) {
-        Write-Error "Failed to submit message."
+        WriteError -Message "Failed to submit message."
     }
 
-    SmtpCmd("QUIT");
+    SmtpCmd("QUIT")
+}
+function WriteError() {
+    param(
+        [CmdletBinding()]
+        [Parameter(Mandatory = $true)]
+        $Message,
+        [Parameter(Mandatory = $false)]
+        $StopError
+    )
+    $out = (Get-Date).ToUniversalTime().ToString() + " " + $message
+    $Script:LogVar += $out
+
+    if ($StopError) {
+        Write-Error -Message $Message -ErrorAction Stop
+    }
+    else {
+        Write-Error -Message $Message
+    }
 }
 function WriteMessage($message) {
     # Format output
@@ -438,14 +549,26 @@ function WriteMessage($message) {
     $Script:LogVar += $out
 }
 function WriteFile() {
-    # Check path exist
-    if ((Test-Path 'logs' -PathType Container) -eq $false) {
-        New-Item -Path 'logs' -ItemType Directory -Force | Out-null
+    [string]$fileName = "smtpdiag_" + (Get-Date).ToUniversalTime().ToString("MMddyyyyss") + ".log"
+    [string]$joinedPath
+
+    # Check if custom log path provided
+    if (-not [System.String]::IsNullOrEmpty($LogPath)) {
+        $joinedPath = Join-Path -Path $LogPath -ChildPath $fileName
     }
 
-    $filePath = (Get-Location).Path + "\logs\smtpdiag.log"
-    Write-Host -ForegroundColor Green "Saved log file to:" $filePath
+    # Use working directory
+    else {
+        # Check path exist
+        if ((Test-Path 'logs' -PathType Container) -eq $false) {
+            New-Item -Path 'logs' -ItemType Directory -Force | Out-null
+        }
+
+        $joinedPath = Join-Path -Path (Get-Location).Path -ChildPath $fileName
+    }
+
+    Write-Host -ForegroundColor Green "Saved log file to: $joinedPath"
 
     $Script:LogVar += "---End of Session---"
-    $Script:LogVar | Out-File -FilePath $filePath -Append -Force
+    $Script:LogVar | Out-File -FilePath $joinedPath -Append -Force
 }
