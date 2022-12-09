@@ -171,11 +171,18 @@ function Test-SmtpClientSubmission() {
     [string[]]$Script:sessionCapabilities
     [System.Collections.Generic.List[PSObject]]$Script:LogVar = @()
 
+    # Check if hostname is IP address
+    $ipv4Regex = '^(?:25[0-5]|2[0-4]\d|[0-1]?\d{1,2})(?:\.(?:25[0-5]|2[0-4]\d|[0-1]?\d{1,2})){3}$'
+    if($SmtpServer -match $ipv4Regex){
+        Write-Warning "Certificate validation will fail when using an IP address. Consider using a hostname or use -AcceptUntrustedCertificate swtich if testing."
+    }
+    else{
     # Verbose details for name resolution
     Write-Verbose "Resolving hostname to IP addresses..."
     $dns = (Resolve-DnsName -Name $smtpServer -QuickTimeout)
     $dns | ForEach-Object { if ($null -ne $_.IP4Address) { Write-Verbose $_.IP4Address } }
     $dns | ForEach-Object { if ($null -ne $_.IP6Address) { Write-Verbose $_.IP6Address } }
+    }
 
     if ($Port -eq 0) {
         # Set default port to 587
@@ -299,6 +306,11 @@ function Connect() {
                 WriteMessage("* TLS negotiation completed." + " CipherAlgorithm:" + $sslstream.CipherAlgorithm + " TlsVersion:" + $sslstream.SslProtocol)
                 WriteMessage("* RemoteCertificate: IgnoreCertValidation:$AcceptUntrustedCertificates " + "<S>" + $sslstream.RemoteCertificate.Subject + "<I>" + $sslstream.RemoteCertificate.Issuer)
 
+                # Warn if using unsupported versions of TLS
+                if ($sslstream.SslProtocol -eq "Tls" -or $sslstream.SslProtocol -eq "Tls11"){
+                    Write-Warning "TLS version is either 1.0 or 1.1. Consider enabling TLS 1.2 or greater."
+                }
+
                 $rawCert = "`n-----BEGIN CERTIFICATE-----"
                 $rawCert += "`n" + [Convert]::ToBase64String($sslstream.RemoteCertificate.GetRawCertData())
                 $rawCert += "`n-----END CERTIFICATE----- "
@@ -418,6 +430,9 @@ function AuthLogin() {
             else {
                 WriteError -Message "SMTP Authentication Failed. Invalid user name."
                 return $false
+            }
+            if ($Script:responseCode -eq 421){
+                WriteError -Message "SMTP Authentication Failed. Check your TLS version is at least 1.2."
             }
             if ($Script:responseCode -ne 235) {
                 WriteError -Message "SMTP Authentication Failed. Check user name and password."
