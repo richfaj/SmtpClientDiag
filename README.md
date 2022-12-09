@@ -4,6 +4,10 @@ The project contains a PowerShell module that can be used to test SMTP Client Su
 The module supports both Basic (AUTH LOGIN) and OAuth (XOAUTH2) authentication. For modern authentication, you must install the MSAL.PS module to obtain a token.
 
 ## Getting Started
+If using Modern Authentication, make sure you have followed the instructions in the document below before testing.
+
+Link: https://learn.microsoft.com/en-us/exchange/client-developer/legacy-protocols/how-to-authenticate-an-imap-pop-smtp-application-by-using-oauth
+
 Execute the cmdlet below to install the module.
 
   Install-Module -Name SmtpClientDiag -MinimumVersion 1.0.0.13
