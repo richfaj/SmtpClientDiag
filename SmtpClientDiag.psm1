@@ -433,6 +433,7 @@ function AuthLogin() {
             }
             if ($Script:responseCode -eq 421){
                 WriteError -Message "SMTP Authentication Failed. Check your TLS version is at least 1.2."
+                return $false
             }
             if ($Script:responseCode -ne 235) {
                 WriteError -Message "SMTP Authentication Failed. Check user name and password."
@@ -466,6 +467,10 @@ function XOAUTH2Login([string]$token) {
 
             if ($Script:responseCode -eq 235) {
                 return $true
+            }
+            if ($Script:responseCode -eq 421){
+                WriteError -Message "SMTP Authentication Failed. Check your TLS version is at least 1.2."
+                return $false
             }
             else {
                 return $false
