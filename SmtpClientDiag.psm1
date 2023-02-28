@@ -38,6 +38,9 @@ SOFTWARE.
  .Parameter UseSsl
   Enables the use of TLS if supported by the remote MTA.
 
+ .Parameter AcceptUntrustedCertificates
+  Disables certificate validation
+
  .Parameter SmtpServer
   The remote SMTP server that will be accepting mail.
 
@@ -58,6 +61,9 @@ SOFTWARE.
 
  .Parameter TenantId
   Azure / Office 365 Tenant Id.
+
+ .Parameter TimeoutSec
+  Optional parameter to force a timeout value other than the default of 10 seconds.
 
  .Parameter Force
   Optional parameter to force mail submission.
@@ -161,6 +167,8 @@ function Test-SmtpClientSubmission() {
             })]
         [string] $LogPath,
         [Parameter(Mandatory = $false)]
+        [int] $TimeoutSec,
+        [Parameter(Mandatory = $false)]
         [switch] $Force
     )
 
@@ -258,20 +266,146 @@ function Test-SmtpClientSubmission() {
         WriteFile
     }
 }
-function Connect() {
+
+function Test-ConnectorAttribution()
+{
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateScript({
+                try {
+                    $null = [mailaddress]$_
+                    return $true
+                }
+                catch {
+                    # Throw away exception
+                }
+        
+                throw "The specified string is not in the form required for an e-mail address."
+            })]
+        [string] $From,
+        [Parameter(Mandatory = $true)]
+        [ValidateScript({
+                try {
+                    $null = [mailaddress]$_
+                    return $true
+                }
+                catch {
+                    # Throw away exception
+                }
+        
+                throw "The specified string is not in the form required for an e-mail address."
+            })]
+        [string] $To,
+        [Parameter(Mandatory = $true)]
+        [string] $SmtpServer,
+        [Parameter(Mandatory = $true)]
+        [string] $CertificateThumbprint,
+        [Parameter(Mandatory = $false)]
+        [ValidateScript({
+                if (Test-Path $_ -PathType Container) {
+                    $true
+                }
+                else {
+                    throw "The location '$_' does not exist. Check the path exist and try again."
+                }
+            })]
+        [string] $LogPath,
+        [Parameter(DontShow = $true, Mandatory = $false)]
+        [int]$Port,
+        [Parameter(DontShow = $true, Mandatory = $false)]
+        [bool]$UseSsl
+    )
+
+    # Check if running as administrator
+    # Admin is needed to gain access to the certificate private key
+    # Future version may add support for PFX file instead
+
+    if ((New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) -eq $false)
+    {
+        Write-Warning "PowerShell session is not running as admin. Not running as admin may prevent the module from gaining access to the certificate private key."
+    }
+
+    [System.IO.StreamReader]$Script:reader
+    [System.IO.StreamWriter]$Script:writer
+    [int]$Script:responseCode = 0
+    [string]$Script:smtpResponse
+    [string[]]$Script:sessionCapabilities
+    [System.Collections.Generic.List[PSObject]]$Script:LogVar = @()
+    [System.Security.Cryptography.X509Certificates.X509Certificate2]$clientCertificate = RetrieveCertificateFromCertStore($CertificateThumbprint)
+    $Port = 25
+    $UseSsl = $true
+
+    try{
+        Connect($clientCertificate)
+        SendMail
+    }
+    catch {
+        # Display last exception
+        WriteMessage($_)
+        Write-Error -ErrorRecord $_
+    }
+    finally {
+        <#Do this after the try block regardless of whether an exception occurred or not#>
+        if ($null -ne $Script:reader) { $Script:reader.Dispose() }
+        if ($null -ne $Script:writer) { $Script:writer.Dispose() }
+        if ($null -ne $Script:tcpClient) { $Script:tcpClient.Dispose() }
+
+        # Reset/clear variables
+        $Script:reader = $null
+        $Script:writer = $null
+        $Script:responseCode = 0
+        $Script:smtpResponse = $null
+        $Script:sessionCapabilities = $null
+
+        Write-Debug "Resources disposed."
+        Write-Host -ForegroundColor Red "[Disconnected]"
+
+        # Write log to file
+        WriteFile
+    }
+}
+
+function RetrieveCertificateFromCertStore($thumbprint) {
+    $cert = Get-ChildItem -Path "cert:\LocalMachine\My" | Where-Object {$_.Thumbprint -eq $thumbprint}
+
+    if ($null -eq $cert -or ($cert | Measure-Object).Count -eq 0) {
+        Write-Error "No certificates found with thumbprint '$thumbprint' in LocalMachine certificate store." -ErrorAction Stop
+    }
+
+    # There should only be one certificate
+    if (($cert | Measure-Object).Count -gt 1) {
+        Write-Error "More than one certificate found with thumbprint '$thumbprint'." -ErrorAction Stop
+    }
+
+    Write-Verbose "Found certificate with thumbprint '$thumbprint' in LocalMachine certificate store."
+    return $cert
+}
+function Connect($clientCertificate) {
+    [bool]$useClientCert = $false
+    [int]$timeoutMs = 10000
+
+    if($null -ne $clientCertificate)
+    {
+        $useClientCert = $true
+    }
+
+    if($TimeoutSec -gt 0){
+        $timeoutMs = $TimeoutSec * 1000
+    }
+
     Write-Host -ForegroundColor Yellow ("[Connecting to $SmtpServer" + ":$Port]")
     $Script:LogVar += "Connecting to $SmtpServer" + ":$Port"
 
     $Script:tcpClient = New-Object System.Net.Sockets.TcpClient
-    $Script:tcpClient.ReceiveTimeout = 10000
-    $Script:tcpClient.SendTimeout = 10000
+    $Script:tcpClient.ReceiveTimeout = $timeoutMs
+    $Script:tcpClient.SendTimeout = $timeoutMs
 
     $result = $Script:tcpClient.BeginConnect($SmtpServer, $Port, $null, $null)
-    $result.AsyncWaitHandle.WaitOne(10000) | Out-Null
+    $result.AsyncWaitHandle.WaitOne($timeoutMs) | Out-Null
 
     if (!$Script:tcpClient.Connected) {
         $remoteHostString = $SmtpServer + ":" + $Port
-        WriteError -Message "Connection to remote host $remoteHostString timed out after 10s." -StopError $true
+        WriteError -Message "Connection to remote host $remoteHostString failed! Using tcp timeout: $($TimeoutSec)s." -StopError $true
     }
     else {
         $Script:tcpClient.EndConnect($result)
@@ -298,13 +432,25 @@ function Connect() {
                 else {
                     $sslstream = New-Object System.Net.Security.SslStream::($Script:tcpClient.GetStream())
                 }
-                $sslstream.AuthenticateAsClient($SmtpServer)
+
+                if($useClientCert){
+                    $certcol = New-object System.Security.Cryptography.X509Certificates.X509CertificateCollection
+                    $certcol.Add($clientCertificate)
+                    $sslstream.AuthenticateAsClient($SmtpServer, $certcol, $true)
+                }
+                else{
+                    $sslstream.AuthenticateAsClient($SmtpServer)
+                }
 
                 $Script:writer = New-Object System.IO.StreamWriter::($sslstream)
                 $Script:reader = New-Object System.IO.StreamReader::($sslstream)
 
                 WriteMessage("* TLS negotiation completed." + " CipherAlgorithm:" + $sslstream.CipherAlgorithm + " TlsVersion:" + $sslstream.SslProtocol)
                 WriteMessage("* RemoteCertificate: IgnoreCertValidation:$AcceptUntrustedCertificates " + "<S>" + $sslstream.RemoteCertificate.Subject + "<I>" + $sslstream.RemoteCertificate.Issuer)
+                if($useClientCert)
+                {
+                    WriteMessage("* ClientCertificate: <S>" + $sslstream.LocalCertificate.Subject + "<I>" + $sslstream.LocalCertificate.Issuer)
+                }
 
                 # Warn if using unsupported versions of TLS
                 if ($sslstream.SslProtocol -eq "Tls" -or $sslstream.SslProtocol -eq "Tls11"){
@@ -525,6 +671,8 @@ function SendMail() {
     $message += "`n"
     $message += "`nThis is a test message."
 
+    # Script does not check for chuncking capability as it is not meant to support all MTAs
+    # BDAT is preferred over DATA command
     $byteCount = [System.Text.Encoding]::ASCII.GetByteCount($message)
     $command = "BDAT $byteCount LAST"
 
