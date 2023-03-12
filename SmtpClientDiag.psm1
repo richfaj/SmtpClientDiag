@@ -667,7 +667,7 @@ function SendMail() {
     $message = "From: `"$From`" <$From>"
     $message += "`nTo: `"$To`" <$To>"
     $message += "`nSubject: SMTP Client Submission Test"
-    $message += "`nContentType: plain/text"
+    $message += "`nContent-Type: text/plain"
     $message += "`n"
     $message += "`nThis is a test message."
 
@@ -710,7 +710,7 @@ function WriteError() {
 }
 function WriteMessage($message) {
     # Format output
-    $out = (Get-Date).ToUniversalTime().ToString() + " " + $message
+    $out = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddThh:mm:ss.fffK") + " " + $message
     Write-Host $out
 
     # Save to variable for logging
