@@ -1,3 +1,4 @@
 /logs
 *.ps1
 *.log
+version.txt

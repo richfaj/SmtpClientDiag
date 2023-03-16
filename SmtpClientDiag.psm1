@@ -80,6 +80,24 @@ SOFTWARE.
    # Submit mail using modern authentication.
    Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -UseSsl -SmtpServer smtp.office365.com -Port 587 -UserName <MailboxSmtp> -ClientId 9954180a-16f4-4683-aaaaaaaaaaaa -TenantId 1da8c747-60dd-4404-8418-aaaaaaaaaaaa
 #>
+function CheckVersionAndWarn(){
+    [version]$installedVersion = (Get-Module -Name SmtpClientDiag).Version
+    [version]$latestVersion;
+
+    try{
+        # Not using proxy
+        $result = Invoke-WebRequest -Uri https://github.com/richfaj/SmtpClientDiag/releases/latest/download/version.txt -TimeoutSec 10 -UseBasicParsing
+        $content = [System.Text.Encoding]::UTF8.GetString($result.Content)
+        $latestVersion = [version]$content
+    }
+    catch{
+        Write-Warning "Unable to check for updates. Please check your internet connection and try again."
+    }
+
+    if($null -ne $latestVersion -and $installedVersion -lt $latestVersion){
+        Write-Warning "A newer version of SmtpClientDiag is available. Please update to the latest version using Update-Module cmdlet and restart the shell."
+    }
+}
 function Test-SmtpClientSubmission() {
     param(
         [CmdletBinding(DefaultParameterSetName = 'LegacyAuth')]
@@ -172,6 +190,9 @@ function Test-SmtpClientSubmission() {
         [switch] $Force
     )
 
+    # Check version
+    CheckVersionAndWarn
+
     [System.IO.StreamReader]$Script:reader
     [System.IO.StreamWriter]$Script:writer
     [int]$Script:responseCode = 0
@@ -187,9 +208,11 @@ function Test-SmtpClientSubmission() {
     else{
     # Verbose details for name resolution
     Write-Verbose "Resolving hostname to IP addresses..."
+    $Script:LogVar += "# DNS Results"
     $dns = (Resolve-DnsName -Name $smtpServer -QuickTimeout)
-    $dns | ForEach-Object { if ($null -ne $_.IP4Address) { Write-Verbose $_.IP4Address } }
-    $dns | ForEach-Object { if ($null -ne $_.IP6Address) { Write-Verbose $_.IP6Address } }
+    $dns | ForEach-Object { if ($null -ne $_.IP4Address) { Write-Verbose $_.IP4Address; $Script:LogVar += $_.IP4Address } }
+    $dns | ForEach-Object { if ($null -ne $_.IP6Address) { Write-Verbose $_.IP6Address; $Script:LogVar += $_.IP6Address } }
+    $Script:LogVar += ""
     }
 
     if ($Port -eq 0) {
@@ -315,6 +338,9 @@ function Test-ConnectorAttribution()
         [Parameter(DontShow = $true, Mandatory = $false)]
         [bool]$UseSsl
     )
+    
+    # Check version
+    CheckVersionAndWarn
 
     # Check if running as administrator
     # Admin is needed to gain access to the certificate private key
@@ -394,6 +420,10 @@ function Connect($clientCertificate) {
     }
 
     Write-Host -ForegroundColor Yellow ("[Connecting to $SmtpServer" + ":$Port]")
+    $Script:LogVar += "# Timeout Settings"
+    $Script:LogVar += "TcpClientReceiveTimeOut: $($TimeoutSec)s"
+    $Script:LogVar += "TcpClientSendTimeOut: $($TimeoutSec)s"
+    $Script:LogVar += ""
     $Script:LogVar += "Connecting to $SmtpServer" + ":$Port"
 
     $Script:tcpClient = New-Object System.Net.Sockets.TcpClient
@@ -743,8 +773,8 @@ function WriteFile() {
 # SIG # Begin signature block
 # MIIm8QYJKoZIhvcNAQcCoIIm4jCCJt4CAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU0eGBkxQPuWd5vAp80EZf2dRx
-# jXOggiCZMIIFjTCCBHWgAwIBAgIQDpsYjvnQLefv21DiCEAYWjANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUzC2fp6rhSetoZOkHgOWvMCj4
+# DtiggiCZMIIFjTCCBHWgAwIBAgIQDpsYjvnQLefv21DiCEAYWjANBgkqhkiG9w0B
 # AQwFADBlMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVk
 # IElEIFJvb3QgQ0EwHhcNMjIwODAxMDAwMDAwWhcNMzExMTA5MjM1OTU5WjBiMQsw
@@ -923,30 +953,30 @@ function WriteFile() {
 # UlNBNDA5NiBTSEEzODQgMjAyMSBDQTECEArx8amB0NDrO6HOBWrhkz4wCQYFKw4D
 # AhoFAKB4MBgGCisGAQQBgjcCAQwxCjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwG
 # CisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwGCisGAQQBgjcCARUwIwYJKoZI
-# hvcNAQkEMRYEFHGwJLxb996+rZsE4NONhM3ugQmfMA0GCSqGSIb3DQEBAQUABIIB
-# gIjX/cyvw4Fqvc4Pi/vcft4tUM0MB9OVTa1bRK8lD5DRcAvNOIhrMjZnLQd5N0iI
-# zeSNvB9qbuFkJMnjxITuVrmkIdcXcgE4ZNvts2xJJVufjY8j89rdcyd77wCRQp5O
-# EVoSd3OL5/i6FTxk7AXX3yf6MZsJuCuv0yQiwod/Uijj6PpfY9m0bGQJNesi/O8D
-# QZXN7u7KhLwPHQc2biUOgSDSCvjNfb1mWt7kG/YUcKRk1bd+RPDCv09NmnS4NLrx
-# dLmduAJnKQTcUr/xe+FD0Ju8++NABHtSY30S7AYYOWGXQV/SYVuOV9O/tjTMdFK2
-# 1RtEynzwDgGb4aydIGYowfZ5hZWJz6EaJfKrnsjH3LmPBeayPvbX9d/FoSkKiDg9
-# Bk0s4O1LQ9PXnMzaIcdAI7Tf8CZW21Jo5WO1qdlEd6Bp3BNtU2tpf2pa2H4WB8ny
-# eNxx5v6fWiEjZ5JpM40Ywo6pBMA/Nv6ZVKxEBU0Tg+dSyJkHwueBUhfeGd8nJi66
-# FKGCAyAwggMcBgkqhkiG9w0BCQYxggMNMIIDCQIBATB3MGMxCzAJBgNVBAYTAlVT
+# hvcNAQkEMRYEFJJOZz0y1MOFuBxtmkl/TvHMDOoKMA0GCSqGSIb3DQEBAQUABIIB
+# gISZNNHtE+X2aUekYd557DHU+TYSTkgnxOm2DGBPT/x8YxwOj2OyFasjuKumVGaG
+# SKMpFPHV80ZPHfX5agxldj9LG1JriIQVU4YRgzpC+uvhhQi8ZStnIcJ0Es+M0pbU
+# 6ivgXL4HY5A6VYpnLJpnJvE9oeSp1lELDKStlM3FHpE3mhcW6oERkHuINLfrZiiI
+# tW4TO2IF5uT6IUJ1QwZsdsfGBtUB0e0UZpG0WH+7HXQg2wnWUsMFbF2PHkp16Eu3
+# H1vmYPtAvPIi+DtUI6mvISnYX5bpOiYHcwXrkZB1SLDlihqEDcUbob/aype/xaz1
+# MNLdAo6SUUL8AhbwLrHzXJfWZ628dOZkrMqzEtkCfmgOOfOj8Ip245PminSdtKVY
+# WO+1qpQqeQVrFQXjs0cloHEFrfn25+OtInS75d7A9DZVXNXb0wXqyhRDpRYWC96R
+# TOisja9rPGSyZTzbOoXTrs4h2OPMOdh6caUnWsy5rymrAfXzClSYI5E+0Q7979oT
+# lqGCAyAwggMcBgkqhkiG9w0BCQYxggMNMIIDCQIBATB3MGMxCzAJBgNVBAYTAlVT
 # MRcwFQYDVQQKEw5EaWdpQ2VydCwgSW5jLjE7MDkGA1UEAxMyRGlnaUNlcnQgVHJ1
 # c3RlZCBHNCBSU0E0MDk2IFNIQTI1NiBUaW1lU3RhbXBpbmcgQ0ECEAxNaXJLlPo8
 # Kko9KQeAPVowDQYJYIZIAWUDBAIBBQCgaTAYBgkqhkiG9w0BCQMxCwYJKoZIhvcN
-# AQcBMBwGCSqGSIb3DQEJBTEPFw0yMzAzMTQxODEwNDZaMC8GCSqGSIb3DQEJBDEi
-# BCA6Rt3KqxNGL2MAU1P+CsFC9IDK8KZqaDEoGRC9JP7X4zANBgkqhkiG9w0BAQEF
-# AASCAgAduXOQzTZT7wuu4Jo7k5AtLzYJcgFJnanFe/mpP7wdcQ5koEriFXxM+Nyp
-# dJr27tz8kQYW4rc0x4QrklM6d83ri3iWQeJ5PzKWegh6paJ3tDkSNtB3GJn3WJ7F
-# 920M7/WNGTXPw4WAg6JU1zQ/yDci8w2U3S0leLbtFyBlu4IyhegQkh0l/bhKxn4s
-# E/9HDItol+4I7rwgEDT/e4YeUM/Bmsvs/7kzeTIbhZ0x2GvLQ38AAtZkjtPMA6tp
-# zAB6nUEUULeXjox1b7vqOqjvOQiXJfu4lMKf8mkfKyS2ixIvh21D1GC/Mn/GFLLi
-# cZ/aiSYIdn2rciN9Q27C1NX6eZvNaNQzZWsX2rDUgqbE3kdsNR0U+ErGLbMtjrjP
-# 4//JkyLugarGTQef4r6AaRbAHCdBb5fkOEY1TbwxPaN0mKqK0D0t0nnCVN3Fx5Ad
-# o4v90LWI7emAtuNwj/ujUDu+CX0Tvl7hnIBXzwpeC4InlRk6/fRM0FPV5jvtnqBG
-# cF+U/mN+FEhcM1hvDay6DkolJq41vXJf2fLi4Hb1rTSUQ3XO0P9CntZgENN7xQGY
-# Lr84pEodXTT8nNqnxrdo7F+FU0+7T+4Nurr12bUQOpT9I0rcjJWU7nmi0YiW+lNA
-# mfyM/QZxolSAJK5t6N9VYpfbQS7oagheSYXSzpErqF97toXQSw==
+# AQcBMBwGCSqGSIb3DQEJBTEPFw0yMzAzMTYxNTU4NDZaMC8GCSqGSIb3DQEJBDEi
+# BCB+uaC+EQHH5Qtp1Ma894O5MC71Jd/1W3HBaj12IxnFmjANBgkqhkiG9w0BAQEF
+# AASCAgABx8Zet9uDPshQjOCGEyQO2kmSz52TrGldIN+QZqL+Zapf2KzzKHM7vXZe
+# JPEuHHdx2vvgI4+Lz+sZbiWGMXQ6u/6fUuVagYCvYZmJrWM0wittE/YWdVCvvB9E
+# H79i2mIAtPjvtLxF0PKeuQQln/7MAaEhUuKjjM1ZcXVstYOFy5sYTwHJGGjGcKf0
+# WL7fuE20qDddByOnIiXyqnO4d4KOdMAYruzvaozgd9WZYC7GEl6lbeMNtt6rNFsM
+# QG5tJXvZS3zU44HmVQV7t+4p0JNWtZESy5Dg6kmyPmtt83B8oME+8JWi4S1MfhFT
+# 6LpyOXVdLgerZiYQsr8gqCHPUu6G6w9N5DUOPBmCc4oDt1uLgCu1baMIpOMoamej
+# hK/VIiPbgLZpHVnYrZB9AnmpLAOBx4EwJAC9jeRVub0bqoYvdCIiPjMdi/5MMQna
+# AqFx8cMoiGIfAaxbJjBqjKS2TFJhdw07LLJb4Svhr1xp9Rgp+LMw0GLPALFGHUUu
+# CLn7TUyeV+2nsR9zpSNaQDMhIxNVR4yBSES+7RPxypixmTf6taAZJbAJgfwb7dfp
+# 8NqmOPiQkvS/VCW7hapzYgaHIv6gPqnjvBm66IylcSuo2tqd5D+SZLYyHwbC2GsL
+# cc6Sq84r2i/aLx9208aOw6LNYew/nqUWMd33H7eviBBRa7owDg==
 # SIG # End signature block
