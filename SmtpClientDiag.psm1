@@ -137,8 +137,9 @@ function Test-SmtpClientSubmission() {
         [int] $Port,
         [Parameter(Mandatory = $true, ParameterSetName = "LegacyAuth")]
         [pscredential] $Credential = $null,
-        [Parameter(Mandatory = $false, ParameterSetName = "Token")]
+        [Parameter(Mandatory = $true, ParameterSetName = "UserProvidedToken")]
         [string] $AccessToken = $null,
+        [Parameter(Mandatory = $true, ParameterSetName = "UserProvidedToken")]
         [Parameter(Mandatory = $true, ParameterSetName = "OAuth_app")]
         [ValidateScript({
                 try {
@@ -223,8 +224,8 @@ function Test-SmtpClientSubmission() {
     try {
         [bool]$authSuccess = $false
 
-        # Use OAUTH if the client id was supplied
-        if (-not [System.String]::IsNullOrEmpty($ClientId)) {
+        # Use OAUTH if the client id or access token was supplied
+        if ((-not [System.String]::IsNullOrEmpty($ClientId)) -or (-not [System.String]::IsNullOrEmpty($AccessToken))) {
             Write-Host -ForegroundColor Yellow "[Requesting token]"
             # Check if dependency module exist
             Import-Module MSAL.PS -ErrorAction SilentlyContinue
@@ -234,14 +235,11 @@ function Test-SmtpClientSubmission() {
                 return
             }
 
-            # Obtain an access token first
-            $token = GetAccessToken
-            if ([System.String]::IsNullOrEmpty($token)) {
-                return
-            }
+            # Obtain an access token
+            $token = Get-SmtpAccessToken
 
             Connect
-            $authSuccess = XOAUTH2Login($token.AccessToken)
+            $authSuccess = XOAUTH2Login($token)
         }
         # Else if no client id check if credentials are available and use legacy auth
         else {
@@ -662,7 +660,7 @@ function XOAUTH2Login([string]$token) {
         return $false
     }
 }
-function GetAccessToken() {
+function Get-SmtpAccessToken() {
     # Use supplied token instead if provided
     if (-not [System.String]::IsNullOrEmpty($AccessToken)) {
         Write-Verbose "User supplied AccessToken. Not fetching new token."
@@ -676,7 +674,7 @@ function GetAccessToken() {
             WriteError -Message "No token was available in the token request result". -StopError $true
         }
 
-        return $token
+        return $token.AccessToken
     }
 }
 function SendMail() {
