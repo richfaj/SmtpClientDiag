@@ -61,7 +61,7 @@ This function __does not__ validate the signature or expiration of your OAuth to
 
 ## Example:
 
-Submit mail without credentials.
+Test SMTP SASL Auth Blob.
 ```PowerShell
 Test-SmtpSaslAuthBlob -EncodedAuthBlob 'dXNlcj1zb21ldXNlckBleGFtcGxlLmNvbQFhdXRoPUJlYXJlciB5YTI5LnZGOWRmdDRxbVRjMk52YjNSbGNrQmhkSFJoZG1semRHRXVZMjl0Q2cBAQ==' -Verbose
 
