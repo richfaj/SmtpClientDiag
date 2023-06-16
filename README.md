@@ -1,7 +1,7 @@
 ## SmtpClientDiag
 The project contains a PowerShell module that can be used to test SMTP Client Submission with Office 365. The module will output the SMTP session to console and save to a log file.
 
-The module supports both Basic (AUTH LOGIN) and OAuth (XOAUTH2) authentication. For modern authentication, you must install the MSAL.PS module to obtain a token.
+The module supports both Basic (AUTH LOGIN) and OAuth (XOAUTH2) authentication. For modern authentication, you must install the MSAL.PS module to obtain a token. For issues, please report the problem using the issues tab in Github.
 
 ## Getting Started
 If using Modern Authentication, make sure you have followed the instructions in the document below before testing.
@@ -10,7 +10,7 @@ Link: https://learn.microsoft.com/en-us/exchange/client-developer/legacy-protoco
 
 Execute the cmdlet below to install the module.
 ```PowerShell
-Install-Module -Name SmtpClientDiag -MinimumVersion 1.0.0.21 -Scope CurrentUser
+Install-Module -Name SmtpClientDiag -MinimumVersion 1.1.0.00 -Scope CurrentUser
 ```
 [![PSGallery Version](https://img.shields.io/powershellgallery/v/SmtpClientDiag.svg?style=flat&logo=powershell&label=PSGallery%20Version)](https://www.powershellgallery.com/packages/SmtpClientDiag)
 ## Examples: 
@@ -48,5 +48,31 @@ Use an alternative timeout value other than the default of 10s. Can be used if t
 > -AcceptUntrustedCertificates
 
 Ignore certificate validation results and allows the use of untrusted certificates.
+
+## Test-SmtpSaslAuthBlob
+This function will check the auth blob for common issues that will cause authentication issues.
+
+* Auth blob is in the correct format
+* Auth blob contains null values or incorrect characters
+* Check OAuth token for correct audience
+* Check OAuth token for correct permissions
+
+This function __does not__ validate the signature or expiration of your OAuth token.
+
+## Example:
+
+Submit mail without credentials.
+```PowerShell
+Test-SmtpSaslAuthBlob -EncodedAuthBlob 'dXNlcj1zb21ldXNlckBleGFtcGxlLmNvbQFhdXRoPUJlYXJlciB5YTI5LnZGOWRmdDRxbVRjMk52YjNSbGNrQmhkSFJoZG1semRHRXVZMjl0Q2cBAQ==' -Verbose
+
+AuthBlobUserName   : someuser@example.com
+AuthBlobToken      : dXNlcj1zb21ldXNlckBleGFtcGxlLmNvbQFhdXRoPUJlYXJlciB5YTI5LnZGOWRmdDRxbVRjMk52YjNSbGNrQmhkSFJoZG1semRHRXVZMjl0Q2cBAQ==
+OAuthTokenAudience : https://outlook.office.com
+OAuthTokenScopes   : SMTP.Send
+OAuthTokenRoles    :
+OAuthTokenUpn      : someuser@example.com
+IsAuthBlobValid    : True
+IsAuthTokenValid   : True
+```
 
 _Signed version available in PSGallery_
