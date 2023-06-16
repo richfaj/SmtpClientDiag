@@ -408,7 +408,7 @@ function RetrieveCertificateFromCertStore($thumbprint) {
 }
 function Connect($clientCertificate) {
     [bool]$useClientCert = $false
-    [int]$timeoutMs = 30000
+    [int]$timeoutMs = 60000
 
     if($null -ne $clientCertificate)
     {
@@ -421,8 +421,8 @@ function Connect($clientCertificate) {
 
     Write-Host -ForegroundColor Yellow ("[Connecting to $SmtpServer" + ":$Port]")
     $Script:LogVar += "# Timeout Settings"
-    $Script:LogVar += "TcpClientReceiveTimeOut: $($TimeoutSec)s"
-    $Script:LogVar += "TcpClientSendTimeOut: $($TimeoutSec)s"
+    $Script:LogVar += "TcpClientReceiveTimeOut: $($timeoutMs)s"
+    $Script:LogVar += "TcpClientSendTimeOut: $($timeoutMs)s"
     $Script:LogVar += ""
     $Script:LogVar += "Connecting to $SmtpServer" + ":$Port"
 
