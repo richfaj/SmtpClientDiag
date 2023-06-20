@@ -606,7 +606,7 @@ function CheckAccessToken($encodedToken) {
         # Check if token is expired
         $currentDateTime = Get-Date
 
-        if ($currentDateTime -gt $Script:BlobResult.OAuthTokenExpirationUtc) {
+        if ($currentDateTime.ToUniversalTime() -gt $Script:BlobResult.OAuthTokenExpirationUtc) {
             $tokenValid = $false
             Write-Verbose "Token has expired. Token expiration date: '$tokenExpiration'. Current date: '$currentDateTime'."
             Write-Warning "Authentication token has expired."
