@@ -80,21 +80,21 @@ SOFTWARE.
    # Submit mail using modern authentication.
    Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -UseSsl -SmtpServer smtp.office365.com -Port 587 -UserName <MailboxSmtp> -ClientId 9954180a-16f4-4683-aaaaaaaaaaaa -TenantId 1da8c747-60dd-4404-8418-aaaaaaaaaaaa
 #>
-function CheckVersionAndWarn(){
+function CheckVersionAndWarn() {
     [version]$installedVersion = (Get-Module -Name SmtpClientDiag).Version
     [version]$latestVersion;
 
-    try{
+    try {
         # Not using proxy
         $result = Invoke-WebRequest -Uri https://github.com/richfaj/SmtpClientDiag/releases/latest/download/version.txt -TimeoutSec 10 -UseBasicParsing
         $content = [System.Text.Encoding]::UTF8.GetString($result.Content)
         $latestVersion = [version]$content
     }
-    catch{
+    catch {
         Write-Warning "Unable to check for updates. Please check your internet connection and try again."
     }
 
-    if($null -ne $latestVersion -and $installedVersion -lt $latestVersion){
+    if ($null -ne $latestVersion -and $installedVersion -lt $latestVersion) {
         Write-Warning "A newer version of SmtpClientDiag is available. Please update to the latest version using Update-Module cmdlet and restart the shell."
     }
 }
@@ -205,17 +205,17 @@ function Test-SmtpClientSubmission() {
 
     # Check if hostname is IP address
     $ipv4Regex = '^(?:25[0-5]|2[0-4]\d|[0-1]?\d{1,2})(?:\.(?:25[0-5]|2[0-4]\d|[0-1]?\d{1,2})){3}$'
-    if($SmtpServer -match $ipv4Regex){
+    if ($SmtpServer -match $ipv4Regex) {
         Write-Warning "Certificate validation will fail when using an IP address. Consider using a hostname or use -AcceptUntrustedCertificate swtich if testing."
     }
-    else{
-    # Verbose details for name resolution
-    Write-Verbose "Resolving hostname to IP addresses..."
-    $Script:LogVar += "# DNS Results"
-    $dns = (Resolve-DnsName -Name $smtpServer -QuickTimeout)
-    $dns | ForEach-Object { if ($null -ne $_.IP4Address) { Write-Verbose $_.IP4Address; $Script:LogVar += $_.IP4Address } }
-    $dns | ForEach-Object { if ($null -ne $_.IP6Address) { Write-Verbose $_.IP6Address; $Script:LogVar += $_.IP6Address } }
-    $Script:LogVar += ""
+    else {
+        # Verbose details for name resolution
+        Write-Verbose "Resolving hostname to IP addresses..."
+        $Script:LogVar += "# DNS Results"
+        $dns = (Resolve-DnsName -Name $smtpServer -QuickTimeout)
+        $dns | ForEach-Object { if ($null -ne $_.IP4Address) { Write-Verbose $_.IP4Address; $Script:LogVar += $_.IP4Address } }
+        $dns | ForEach-Object { if ($null -ne $_.IP6Address) { Write-Verbose $_.IP6Address; $Script:LogVar += $_.IP6Address } }
+        $Script:LogVar += ""
     }
 
     if ($Port -eq 0) {
@@ -289,8 +289,7 @@ function Test-SmtpClientSubmission() {
         WriteFile
     }
 }
-function Test-ConnectorAttribution()
-{
+function Test-ConnectorAttribution() {
     param(
         [Parameter(Mandatory = $true)]
         [ValidateScript({
@@ -345,8 +344,7 @@ function Test-ConnectorAttribution()
     # Admin is needed to gain access to the certificate private key
     # Future version may add support for PFX file instead
 
-    if ((New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) -eq $false)
-    {
+    if ((New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) -eq $false) {
         Write-Warning "PowerShell session is not running as admin. Not running as admin may prevent the module from gaining access to the certificate private key."
     }
 
@@ -360,7 +358,7 @@ function Test-ConnectorAttribution()
     $Port = 25
     $UseSsl = $true
 
-    try{
+    try {
         Connect($clientCertificate)
         SendMail
     }
@@ -397,17 +395,17 @@ function Test-SmtpSaslAuthBlob() {
     )
 
     $Script:BlobResult = [PSCustomObject] @{
-        AuthBlobUserName   = $null
-        AuthBlobToken      = $null
-        OAuthTokenAudience = $null
-        OAuthTokenScopes   = $null
-        OAuthTokenRoles    = $null
-        OAuthTokenUpn      = $null
-        OAuthTokenExpire   = $null
-        ApplicationId      = $null
-        AppDisplayName     = $null
-        IsAuthBlobValid    = $false
-        IsAuthTokenValid   = $false
+        AuthBlobUserName        = $null
+        AuthBlobToken           = $null
+        OAuthTokenAudience      = $null
+        OAuthTokenScopes        = $null
+        OAuthTokenRoles         = $null
+        OAuthTokenUpn           = $null
+        OAuthTokenExpirationUtc = $null
+        ApplicationId           = $null
+        AppDisplayName          = $null
+        IsAuthBlobValid         = $false
+        IsAuthTokenValid        = $false
     }
 
     # Write error if no auth blob is provided instead of making parameter mandatory.
@@ -500,6 +498,18 @@ function DecodeBase64Value([string] $value) {
     if ([string]::IsNullOrEmpty($value)) {
         return $null
     }
+    # Token is base64 encoded and must be a multiple of 4 characters in length. Add padding if needed.
+    if ($value.Length % 4 -eq 2) {
+        $value += "=="
+    }
+    elseif ($value.Length % 4 -eq 3) {
+        $value += "="
+    }
+    elseif ($value.Length % 4 -ne 0) {
+        Write-Verbose "Failed to decode base64 string: $value"
+        throw "Invalid length for a base64 string."
+    }
+
     $valueBytes = [System.Convert]::FromBase64String($value)
     return [System.Text.Encoding]::UTF8.GetString($valueBytes)
 }
@@ -540,9 +550,9 @@ function CheckAccessToken($encodedToken) {
     $Script:BlobResult.OAuthTokenUpn = $token.upn
     $Script:BlobResult.OAuthTokenScopes = $token.scp
     $Script:BlobResult.OAuthTokenRoles = $token.roles
-    $Script:BlobResult.OAuthTokenExpiration = [System.DateTimeOffSet]::FromUnixTimeSeconds($token.exp).UtcDateTime
+    $Script:BlobResult.OAuthTokenExpirationUtc = [System.DateTimeOffSet]::FromUnixTimeSeconds($token.exp).UtcDateTime
     $Script:BlobResult.ApplicationId = $token.appid
-    $Script:BlobResult.ApplicationName = $token.app_displayname
+    $Script:BlobResult.AppDisplayName = $token.app_displayname
 
     if (-not [string]::IsNullOrEmpty($token)) {
         # Check for correct audience claim
@@ -595,9 +605,8 @@ function CheckAccessToken($encodedToken) {
 
         # Check if token is expired
         $currentDateTime = Get-Date
-        $Script:BlobResult.OAuthTokenExpiration = $tokenExpiration
 
-        if ($tokenExpiration -gt $currentDateTime){
+        if ($currentDateTime -gt $Script:BlobResult.OAuthTokenExpirationUtc) {
             $tokenValid = $false
             Write-Verbose "Token has expired. Token expiration date: '$tokenExpiration'. Current date: '$currentDateTime'."
             Write-Warning "Authentication token has expired."
@@ -610,7 +619,7 @@ function CheckAccessToken($encodedToken) {
     $Script:BlobResult.IsAuthTokenValid = $tokenValid
 }
 function RetrieveCertificateFromCertStore($thumbprint) {
-    $cert = Get-ChildItem -Path "cert:\LocalMachine\My" | Where-Object {$_.Thumbprint -eq $thumbprint}
+    $cert = Get-ChildItem -Path "cert:\LocalMachine\My" | Where-Object { $_.Thumbprint -eq $thumbprint }
 
     if ($null -eq $cert -or ($cert | Measure-Object).Count -eq 0) {
         Write-Error "No certificates found with thumbprint '$thumbprint' in LocalMachine certificate store." -ErrorAction Stop
@@ -628,12 +637,11 @@ function Connect($clientCertificate) {
     [bool]$useClientCert = $false
     [int]$timeoutMs = 60000
 
-    if($null -ne $clientCertificate)
-    {
+    if ($null -ne $clientCertificate) {
         $useClientCert = $true
     }
 
-    if($TimeoutSec -gt 0){
+    if ($TimeoutSec -gt 0) {
         $timeoutMs = $TimeoutSec * 1000
     }
 
@@ -681,12 +689,12 @@ function Connect($clientCertificate) {
                     $sslstream = New-Object System.Net.Security.SslStream::($Script:tcpClient.GetStream())
                 }
 
-                if($useClientCert){
+                if ($useClientCert) {
                     $certcol = New-object System.Security.Cryptography.X509Certificates.X509CertificateCollection
                     $certcol.Add($clientCertificate)
                     $sslstream.AuthenticateAsClient($SmtpServer, $certcol, $true)
                 }
-                else{
+                else {
                     $sslstream.AuthenticateAsClient($SmtpServer)
                 }
 
@@ -695,13 +703,12 @@ function Connect($clientCertificate) {
 
                 WriteMessage("* TLS negotiation completed." + " CipherAlgorithm:" + $sslstream.CipherAlgorithm + " TlsVersion:" + $sslstream.SslProtocol)
                 WriteMessage("* RemoteCertificate: IgnoreCertValidation:$AcceptUntrustedCertificates " + "<S>" + $sslstream.RemoteCertificate.Subject + "<I>" + $sslstream.RemoteCertificate.Issuer)
-                if($useClientCert)
-                {
+                if ($useClientCert) {
                     WriteMessage("* ClientCertificate: <S>" + $sslstream.LocalCertificate.Subject + "<I>" + $sslstream.LocalCertificate.Issuer)
                 }
 
                 # Warn if using unsupported versions of TLS
-                if ($sslstream.SslProtocol -eq "Tls" -or $sslstream.SslProtocol -eq "Tls11"){
+                if ($sslstream.SslProtocol -eq "Tls" -or $sslstream.SslProtocol -eq "Tls11") {
                     Write-Warning "TLS version is either 1.0 or 1.1. Consider enabling TLS 1.2 or greater."
                 }
 
@@ -825,7 +832,7 @@ function AuthLogin() {
                 WriteError -Message "SMTP Authentication Failed. Invalid user name."
                 return $false
             }
-            if ($Script:responseCode -eq 421){
+            if ($Script:responseCode -eq 421) {
                 WriteError -Message "SMTP Authentication Failed. Check your TLS version is at least 1.2."
                 return $false
             }
@@ -862,7 +869,7 @@ function XOAUTH2Login([string]$token) {
             if ($Script:responseCode -eq 235) {
                 return $true
             }
-            if ($Script:responseCode -eq 421){
+            if ($Script:responseCode -eq 421) {
                 WriteError -Message "SMTP Authentication Failed. Check your TLS version is at least 1.2."
                 return $false
             }
