@@ -10,7 +10,7 @@ Link: https://learn.microsoft.com/en-us/exchange/client-developer/legacy-protoco
 
 Execute the cmdlet below to install the module.
 ```PowerShell
-Install-Module -Name SmtpClientDiag -MinimumVersion 1.1.0.00 -Scope CurrentUser
+Install-Module -Name SmtpClientDiag -MinimumVersion 1.1.0.2 -Scope CurrentUser
 ```
 [![PSGallery Version](https://img.shields.io/powershellgallery/v/SmtpClientDiag.svg?style=flat&logo=powershell&label=PSGallery%20Version)](https://www.powershellgallery.com/packages/SmtpClientDiag)
 ## Examples: 
