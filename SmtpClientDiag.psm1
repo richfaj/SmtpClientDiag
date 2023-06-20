@@ -490,7 +490,7 @@ function Test-SmtpSaslAuthBlob() {
 
     # If we get here, we're good
     $Script:BlobResult.IsAuthBlobValid = $true
-    $Script:BlobResult | Format-List
+    return $Script:BlobResult
 }
 
 function DecodeBase64Value([string] $value) {
