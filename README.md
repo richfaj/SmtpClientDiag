@@ -65,14 +65,17 @@ Test SMTP SASL Auth Blob.
 ```PowerShell
 Test-SmtpSaslAuthBlob -EncodedAuthBlob 'dXNlcj1zb21ldXNlckBleGFtcGxlLmNvbQFhdXRoPUJlYXJlciB5YTI5LnZGOWRmdDRxbVRjMk52YjNSbGNrQmhkSFJoZG1semRHRXVZMjl0Q2cBAQ==' -Verbose
 
-AuthBlobUserName   : someuser@example.com
-AuthBlobToken      : dXNlcj1zb21ldXNlckBleGFtcGxlLmNvbQFhdXRoPUJlYXJlciB5YTI5LnZGOWRmdDRxbVRjMk52YjNSbGNrQmhkSFJoZG1semRHRXVZMjl0Q2cBAQ==
-OAuthTokenAudience : https://outlook.office.com
-OAuthTokenScopes   : SMTP.Send
-OAuthTokenRoles    :
-OAuthTokenUpn      : someuser@example.com
-IsAuthBlobValid    : True
-IsAuthTokenValid   : True
+AuthBlobUserName     : someuser@example.com
+AuthBlobToken        : dXNlcj1zb21ldXNlckBleGFtcGxlLmNvbQFhdXRoPUJlYXJlciB5YTI5LnZGOWRmdDRxbVRjMk52YjNSbGNrQmhkSFJoZG1semRHRXVZMjl0Q2cBAQ==
+OAuthTokenAudience   : https://outlook.office.com
+OAuthTokenScopes     : SMTP.Send
+OAuthTokenRoles      :
+OAuthTokenUpn        : someuser@example.com
+OAuthTokenExpiration : 01/01/1970 12:00:00 AM
+ApplicationId        : 9954180a-16f4-4683-aaaaaaaaaaaa
+AppDisplayName       : My OAuth SMTP Application
+IsAuthBlobValid      : True
+IsAuthTokenValid     : True
 ```
 
 _Signed version available in PSGallery_
