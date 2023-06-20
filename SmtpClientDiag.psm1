@@ -403,6 +403,9 @@ function Test-SmtpSaslAuthBlob() {
         OAuthTokenScopes   = $null
         OAuthTokenRoles    = $null
         OAuthTokenUpn      = $null
+        OAuthTokenExpire   = $null
+        ApplicationId      = $null
+        AppDisplayName     = $null
         IsAuthBlobValid    = $false
         IsAuthTokenValid   = $false
     }
@@ -537,6 +540,9 @@ function CheckAccessToken($encodedToken) {
     $Script:BlobResult.OAuthTokenUpn = $token.upn
     $Script:BlobResult.OAuthTokenScopes = $token.scp
     $Script:BlobResult.OAuthTokenRoles = $token.roles
+    $Script:BlobResult.OAuthTokenExpiration = [System.DateTimeOffSet]::FromUnixTimeSeconds($token.exp).UtcDateTime
+    $Script:BlobResult.ApplicationId = $token.appid
+    $Script:BlobResult.ApplicationName = $token.app_displayname
 
     if (-not [string]::IsNullOrEmpty($token)) {
         # Check for correct audience claim
@@ -551,6 +557,16 @@ function CheckAccessToken($encodedToken) {
             $isAppAuth = $true
             Write-Verbose "UPN claim is null or empty."
             Write-Warning "Application authentication detected. UPN claim not found in token."
+        }
+
+        # If delegated permission check if upn in token matches username in auth blob
+        # Token can be valid but must be for the same user as the auth blob
+        if (-not $isAppAuth) {
+            if ($token.upn -ne $Script:BlobResult.AuthBlobUserName) {
+                $tokenValid = $false
+                Write-Verbose "UPN claim in token does not match username in auth blob. UPN claim:'$($token.upn)' Username:'$($Script:BlobResult.AuthBlobUserName)'."
+                Write-Warning "UPN in authentication token and AuthBlob do not match."
+            }
         }
 
         # If using client credential flow check the roles claim
@@ -575,6 +591,16 @@ function CheckAccessToken($encodedToken) {
                 Write-Verbose "Invalid scope in token. Expected 'SMTP.Send' but found '$($token.scp)'."
                 Write-Warning "Required permission for SMTP Client Submission not found in token."
             }
+        }
+
+        # Check if token is expired
+        $currentDateTime = Get-Date
+        $Script:BlobResult.OAuthTokenExpiration = $tokenExpiration
+
+        if ($tokenExpiration -gt $currentDateTime){
+            $tokenValid = $false
+            Write-Verbose "Token has expired. Token expiration date: '$tokenExpiration'. Current date: '$currentDateTime'."
+            Write-Warning "Authentication token has expired."
         }
     }
     else {
