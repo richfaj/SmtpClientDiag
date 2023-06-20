@@ -560,7 +560,7 @@ function CheckAccessToken($encodedToken) {
             if (-not $permissions.Contains("SMTP.SendAsApp")) {
                 $tokenValid = $false
                 Write-Verbose "Not checking scopes claim as this is not user authentication."
-                Write-Verbose "Invalid role in token. Expected 'SMTP.Send' but found $($token.scp)"
+                Write-Verbose "Invalid roles in token. Expected 'SMTP.SendAsApp' but found '$($token.roles)'."
                 Write-Warning "Required permission for SMTP Client Submission not found in token."
             }
         }
@@ -572,7 +572,7 @@ function CheckAccessToken($encodedToken) {
             $permissions = $token.scp.Split()
             if (-not $permissions.Contains("SMTP.Send")) {
                 $tokenValid = $false
-                Write-Verbose "Invalid scope in token. Expected 'SMTP.Send' but found $($token.scp)"
+                Write-Verbose "Invalid scope in token. Expected 'SMTP.Send' but found '$($token.scp)'."
                 Write-Warning "Required permission for SMTP Client Submission not found in token."
             }
         }
