@@ -1,34 +1,90 @@
-<#
-MIT License
+class Logger {
+    hidden $LogLines = @()
+    hidden [bool]$EnableVerbose = $false
 
-Copyright (c) 2023 Richard Fajardo
+    Logger([string]$pref) {
+        if ($pref -eq "Continue") {
+            $this.EnableVerbose = $true
+        }
+    }
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+    [void] LogMessage ([string]$message) {
+        $this.LogMessage($message, "Information", "", $false, $false)
+    }
+    [void] LogMessage([string]$message, [string]$type, [bool]$logOnly = $false, [bool]$noTimestamp = $false) {
+        $this.LogMessage($message, $type, "", $logOnly, $noTimestamp)
+    }
+    [void] LogMessage([string]$message, [string]$type = "Information", [string]$foregroundColor, [bool]$logOnly = $false, [bool]$noTimestamp = $false) {
+        if ($this.EnableVerbose) {
+            $VerbosePreference = "Continue"
+        }
+        if ($type -eq "Verbose" -and -not $this.EnableVerbose) {
+            return
+        }
+        if ($type -eq "Warning") {
+            Write-Warning -Message $message
+            return
+        }
+        $line = $null
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+        if ($noTimestamp) {
+            $line = $message
+        }
+        else {
+            $line = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddThh:mm:ss.fffK") + " " + $message
+        }
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-#>
-using module .\Test-SmtpClientSubmission.psm1
-using module .\Test-SmtpClientCertificate.psm1
-using module .\Test-SmtpSaslAuthBlob.psm1
+        if (-not $logOnly) {
+            if ($type -eq "Verbose") {
+                Write-Verbose $message
+                $line = "VERBOSE: $message"
+            }
+            else {
+                if (-not [string]::IsNullOrEmpty($ForegroundColor)) {
+                    Write-Host $line -ForegroundColor $ForegroundColor
+                }
+                else {
+                    Write-Host $line
+                }
+            }
+        }
+
+        $this.LogLines += $line
+    }
+    [void] LogError ([string]$message) {
+        $this.LogError($message, $false)
+    }
+    [void] LogError ([string]$message, [bool]$logOnly) {
+        $this.LogMessage($message, "Error", "Red", $logOnly, $true)
+    }
+    [void] WriteFile([string]$logPath) {
+        [string]$fileName = "smtpdiag_" + (Get-Date).ToUniversalTime().ToString("MMddyyhhmmss") + ".log"
+        [string]$joinedPath = $null
+
+        # Check if custom log path provided
+        if (-not [System.String]::IsNullOrEmpty($logPath)) {
+            $joinedPath = Join-Path -Path $logPath -ChildPath $fileName
+        }
+
+        # Use working directory
+        else {
+            # Check path exist
+            if ((Test-Path 'logs' -PathType Container) -eq $false) {
+                New-Item -Path 'logs' -ItemType Directory -Force | Out-null
+            }
+
+            $joinedPath = Join-Path -Path (Get-Location).Path -ChildPath $fileName
+        }
+
+        $this.LogLines | Out-File -FilePath $joinedPath -Append -Force
+        Write-Host -ForegroundColor Green "Saved log file to: $joinedPath"
+    }
+}
 # SIG # Begin signature block
 # MIIm8wYJKoZIhvcNAQcCoIIm5DCCJuACAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUG8S1XV6wyVesUjYnL9Zoiz2/
-# yu+ggiCbMIIFjTCCBHWgAwIBAgIQDpsYjvnQLefv21DiCEAYWjANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU6DZyYXxOZqPbTXlYoZIKs8UQ
+# BGaggiCbMIIFjTCCBHWgAwIBAgIQDpsYjvnQLefv21DiCEAYWjANBgkqhkiG9w0B
 # AQwFADBlMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVk
 # IElEIFJvb3QgQ0EwHhcNMjIwODAxMDAwMDAwWhcNMzExMTA5MjM1OTU5WjBiMQsw
@@ -207,30 +263,30 @@ using module .\Test-SmtpSaslAuthBlob.psm1
 # ZyBSU0E0MDk2IFNIQTM4NCAyMDIxIENBMQIQCvHxqYHQ0Os7oc4FauGTPjAJBgUr
 # DgMCGgUAoHgwGAYKKwYBBAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMx
 # DAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAjBgkq
-# hkiG9w0BCQQxFgQUMvnC6F7IVFj37iQAupp3LledtHwwDQYJKoZIhvcNAQEBBQAE
-# ggGAbQfFaOIgOx5jbUNgiSa5lKA7ZInSQgwcE0abnUk8qnX864+RLQu9MSXAItTs
-# tZpEJmnlYk3M8HZpEtzkpUJwjGm4/+pafUBYX/FWVIfjGxoGVm24tlan7lVvXpiu
-# IvbvtuuPv7VeAsysU304NVzPMkQJFqsHytxfieK2DxYGSbLQSJm0RoOMkiHZyLVi
-# EdJ9b6oxL+XgDDyAmIvLijJi+rmIuL2wG0bvPI6vWN4gIz0MT3KARwDNb/2XrJCb
-# 55ZBhPnvzlunP1hBDM4JDGOTlVxq7myZ26TK/BAk0BC/wwZfwFEzCs/zTvdwJh/w
-# i9RtvzwzXNVNrlGsAey8UvjPwmWhZKEpB2UBWITwO/VFJKr5GQNJXEDmJAkEpL5B
-# g86EubGeW847D7eXGIdmDtjKYDjfdTVKJlaskD5uH/TR6sz9RYxKjNxOaNlNBoXq
-# ZpQDsKQljdswc00vrtSHLudqz6s12Zuk3mb9MLlwxAzCamts117uR4XOrHqARctq
-# 0n4AoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkGA1UEBhMC
+# hkiG9w0BCQQxFgQUStbakBpITPubBf842wmOkMtWb98wDQYJKoZIhvcNAQEBBQAE
+# ggGARbHN+9eEQw9Jiq9UyxxrnfflZDbYuWMpODmy4aL3tVXPL+sH018+ll+MjV5M
+# d5gOyLrl/U4o4v+TYWtUJeXWZXlP/k24zOJrqjaS4vW1NUHmbkY+FxJC3A2rYEqw
+# WzlztQu0IBocfPFOBbdht0DoqSJVLc7LU5jKo3LW9RJnWV6JnRhhcuF/JNd4zfHb
+# WyFSvK0GHPuOCzxP8NwDLT5XlzlrHnq5gsfUJg394sP1UnuJaz3HqPLdNNmzJm++
+# ehrd6zaj0ZzxzJFWkDJc8M7l0xLXr5zSuFjh8W11O2l9pgRWcKpHQTY5+LhX3EoW
+# LLTDsoFVKkOH5CkqFIj5SrfHEKRij2CpVM2TOurHYeYP5NP3aHA3mRcxqMZ1Jcpa
+# f+19nbiI2nmJ6OlZpaDSyffTdMGXdCylq0AwD7ZorfyEwb+cMPNWhfTFO6tOz+G0
+# C/jnnyewlE3RAA357pm3y38bxdtb9p+JeH88EE+d7n62vzSsv1ruJvZUcxqgYvjm
+# TPJYoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkGA1UEBhMC
 # VVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTswOQYDVQQDEzJEaWdpQ2VydCBU
 # cnVzdGVkIEc0IFJTQTQwOTYgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQBUSv85Sd
 # CDmmv9s/X+VhFjANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzELBgkqhkiG
-# 9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMDgxNTIxMjM0MFowLwYJKoZIhvcNAQkE
-# MSIEIGW+QHXc6eMMGGCFJmkUTjcLL3cwXXnIvdW0chEAWSH3MA0GCSqGSIb3DQEB
-# AQUABIICAFfeBlKfLJUU8l6sVTwV8pUUkZ2L/jmCDyJ1fJez7vVLg+alZUD/n3/f
-# JRgL4k7WwfSWDDm6aipCpGnUdHbDBiR9D/t21e/qTZl3G6yLGWcrr1VMmvlgcjWo
-# RZKFCpJgUL56Wx+YeFN9xXfPGm0+V09C3GWXtoLCk29hYca/tKv1gr82lfTHyuG3
-# KxOf1lqWWe+7gNRXN2PspYnebS4oVB9FPhq1PokHpeH9ByyG83hqgXYVpiD5hMIO
-# XcGW1Yjkt4pFpo508EmtHACq8W/OZsnZlyQPd2chbrelI7tI33E5HpLlaIXHy/AU
-# uqKL2EEuwFEmJShlT147WT8+IszJTrFcxxwKbz1LiNxBYvnl7GRjtMOeirAkVWvs
-# QZX7W7Lpu3qvmFAFgBNqdOLHe41T0fVtlHWm21wYt62K5FB01PWmyAyYMup1Sa69
-# 6wGU7H1a9eb5iYvsko/5TiBeo1getJ5pTfxQu1pGlG3PsTZK0PhxafFGcNCbj565
-# H3XqsV5Qv1P5LzgTAwVR7NZSNSDsrCLkmxnKV0hpb2MVqPAyMqyFmfhi29AQq0XY
-# S6dy5lz93pNq4m4Wah7t/g6+zuJZ3Z9LTuoklLodO38xJN0Uuqnh01qBLF8ZrS3e
-# p0w9idoyqj2+3Y7VlnF2TiNFmRANyB8DAjOrPHRwQ0gWC6mMfou6
+# 9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMDgxNTIxMjMyOFowLwYJKoZIhvcNAQkE
+# MSIEIBPGaJqkOmayC9titew+e+XGQwSc+PZfS0MkZpA6891yMA0GCSqGSIb3DQEB
+# AQUABIICABxyDk/klwjuyzmy7o9LcF3XYgo/Mz0ezsOEZAuRr9Aci/znzfRZG2S6
+# 0hfnkzrOnvoEF6P8dGZQp06kNHQlMgQ/GCmMb7S/SzLphzYSFXhuH8insQzF12nj
+# y8bt2z6yHUHvoHt2Cbvl/Twdkyk0UkR9LW1tunX9LAo8TNRxwrPdGkBAVT8NKr7u
+# F6IjCCqCE7TgCKysDXfQNdKqDo79O5XdXrF63bPAbT2gFH6cgUgfa9CPTQrRjEu5
+# GNcmHE7RGuHH2OlPFlwzC6MLx4qd0Yym8KvTh0YOcwwQAOlCV7Lexz/GzHNo+/Wf
+# nSxcnHDLa/abMaB+zZyhfG9eGCzm2aOXtgZkL9XdO70mWwF0ydbfZO0P294GQVFh
+# WPuBQVOR8L4vOmb2KbzmAtac9iYw0cQkmrfye20evL8sOWX/pbDvNNweSZ2jt3pT
+# YJvoYpcKfCvnoHEAydZL8+CgGTAbG/4rW+LPP7ZGtORPhevXoXLqmiXl7hfTiznO
+# zQz8E6fNd4GF7JETBcUEu5oTMlOKcQIpDD1UI7WaHg7VZ3cLvo30vQAnWub18y85
+# lchaDISc8PlXf9pAyNYXDwMriyVW5tg2ZcodPTRuQQYi3d74LmzLeJI+qclnUqmo
+# 8tk8Pi5QjmizVpb0V905XEzyT/g/lpX94g5sE9Fc+Qx+0KUXR8jT
 # SIG # End signature block

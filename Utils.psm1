@@ -1,34 +1,107 @@
-<#
-MIT License
+function CheckVersionAndWarn() {
+    [version]$installedVersion = (Get-Module -Name SmtpClientDiag).Version
+    [version]$latestVersion;
 
-Copyright (c) 2023 Richard Fajardo
+    try {
+        # Not using proxy
+        $result = Invoke-WebRequest -Uri "https://github.com/richfaj/SmtpClientDiag/releases/latest/download/version.txt" -TimeoutSec 10 -UseBasicParsing
+        $content = [System.Text.Encoding]::UTF8.GetString($result.Content)
+        $latestVersion = [version]$content
+    }
+    catch {
+        Write-Warning "Unable to check for updates. Please check your internet connection and try again."
+    }
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+    if ($null -ne $latestVersion -and $installedVersion -lt $latestVersion) {
+        Write-Warning "A newer version of SmtpClientDiag is available. Please update to the latest version using Update-Module cmdlet and restart the shell."
+    }
+}
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+function DecodeBase64Value([string] $value) {
+    if ([string]::IsNullOrEmpty($value)) {
+        return $null
+    }
+    # Token is base64 encoded and must be a multiple of 4 characters in length. Add padding if needed.
+    if ($value.Length % 4 -eq 2) {
+        $value += "=="
+    }
+    elseif ($value.Length % 4 -eq 3) {
+        $value += "="
+    }
+    elseif ($value.Length % 4 -ne 0) {
+        Write-Verbose "Failed to decode base64 string: $value"
+        throw "Invalid length for a base64 string."
+    }
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-#>
-using module .\Test-SmtpClientSubmission.psm1
-using module .\Test-SmtpClientCertificate.psm1
-using module .\Test-SmtpSaslAuthBlob.psm1
+    $valueBytes = [System.Convert]::FromBase64String($value)
+    return [System.Text.Encoding]::UTF8.GetString($valueBytes)
+}
+
+function GetCharHexValue([char] $char) {
+    return ('{0:x}' -f [int]$char).ToUpper()
+}
+function Get-SmtpAccessToken() {
+    param(
+        [string]$ClientId,
+        [string]$TenantId,
+        [string]$UserName,
+        [SecureString]$ClientSecret,
+        [string]$AccessToken,
+        [string]$VerbosePref)
+
+    $VerbosePreference = $VerbosePref
+
+    # Use supplied token instead if provided
+    if (-not [System.String]::IsNullOrEmpty($AccessToken)) {
+        Write-Verbose "User supplied AccessToken. Not fetching new token."
+        return $AccessToken
+    }
+    else {
+        Write-Verbose "Obtaining an access token using MSAL.PS module"
+
+        $token = $null
+
+        # Non-interactive login if client secret is provided
+        if (-not [System.String]::IsNullOrEmpty($ClientSecret)) {
+            Write-Verbose "Using client secret to obtain access token."
+            $token = Get-MsalToken -ClientId $ClientId -TenantId $TenantId -ClientSecret $ClientSecret -Scope 'https://outlook.office.com/.default'
+        }
+        else {
+            Write-Verbose "Using interactive login to obtain access token."
+            $token = Get-MsalToken -ClientId $ClientId -TenantId $TenantId -Interactive -Scope 'https://outlook.office.com/Smtp.Send' -LoginHint $UserName
+        }
+        if ([System.String]::IsNullOrEmpty($token.AccessToken)) {
+            throw "No token was available in the token request result."
+        }
+
+        return $token.AccessToken
+    }
+}
+function RetrieveCertificateFromCertStore($thumbprint) {
+    $cert = Get-ChildItem -Path "cert:\LocalMachine\My" | Where-Object { $_.Thumbprint -eq $thumbprint }
+
+    if ($null -eq $cert -or ($cert | Measure-Object).Count -eq 0) {
+        throw "No certificates found with thumbprint '$thumbprint' in LocalMachine certificate store."
+    }
+
+    # There should only be one certificate
+    if (($cert | Measure-Object).Count -gt 1) {
+        throw "More than one certificate found with thumbprint '$thumbprint'."
+    }
+
+    # Do we have access to the private key?
+    if (-not $cert.HasPrivateKey) {
+        throw "The certificate with thumbprint '$thumbprint' does not have a private key."
+    }
+
+    Write-Verbose "Found certificate with thumbprint '$thumbprint' in LocalMachine certificate store."
+    return $cert
+}
 # SIG # Begin signature block
 # MIIm8wYJKoZIhvcNAQcCoIIm5DCCJuACAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUG8S1XV6wyVesUjYnL9Zoiz2/
-# yu+ggiCbMIIFjTCCBHWgAwIBAgIQDpsYjvnQLefv21DiCEAYWjANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUEhfEMHnqcGkLvYJ7bCTHUVGc
+# uFOggiCbMIIFjTCCBHWgAwIBAgIQDpsYjvnQLefv21DiCEAYWjANBgkqhkiG9w0B
 # AQwFADBlMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVk
 # IElEIFJvb3QgQ0EwHhcNMjIwODAxMDAwMDAwWhcNMzExMTA5MjM1OTU5WjBiMQsw
@@ -207,30 +280,30 @@ using module .\Test-SmtpSaslAuthBlob.psm1
 # ZyBSU0E0MDk2IFNIQTM4NCAyMDIxIENBMQIQCvHxqYHQ0Os7oc4FauGTPjAJBgUr
 # DgMCGgUAoHgwGAYKKwYBBAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMx
 # DAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAjBgkq
-# hkiG9w0BCQQxFgQUMvnC6F7IVFj37iQAupp3LledtHwwDQYJKoZIhvcNAQEBBQAE
-# ggGAbQfFaOIgOx5jbUNgiSa5lKA7ZInSQgwcE0abnUk8qnX864+RLQu9MSXAItTs
-# tZpEJmnlYk3M8HZpEtzkpUJwjGm4/+pafUBYX/FWVIfjGxoGVm24tlan7lVvXpiu
-# IvbvtuuPv7VeAsysU304NVzPMkQJFqsHytxfieK2DxYGSbLQSJm0RoOMkiHZyLVi
-# EdJ9b6oxL+XgDDyAmIvLijJi+rmIuL2wG0bvPI6vWN4gIz0MT3KARwDNb/2XrJCb
-# 55ZBhPnvzlunP1hBDM4JDGOTlVxq7myZ26TK/BAk0BC/wwZfwFEzCs/zTvdwJh/w
-# i9RtvzwzXNVNrlGsAey8UvjPwmWhZKEpB2UBWITwO/VFJKr5GQNJXEDmJAkEpL5B
-# g86EubGeW847D7eXGIdmDtjKYDjfdTVKJlaskD5uH/TR6sz9RYxKjNxOaNlNBoXq
-# ZpQDsKQljdswc00vrtSHLudqz6s12Zuk3mb9MLlwxAzCamts117uR4XOrHqARctq
-# 0n4AoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkGA1UEBhMC
+# hkiG9w0BCQQxFgQUV/WBWovDB3tMVs19nnFjUBpGtDowDQYJKoZIhvcNAQEBBQAE
+# ggGAJ/Ca+HUThtE9k3O2xQw0S8sHI4eN38BZ6AqlILYr1MAo8IZ4Pb9dge3KoUm+
+# DEE/EVCtdGjCnikX/JAAoINtjINJYud5fPao3oYo95sq6xNfcXsw2gavnPKpplmK
+# 2pYcAkJRxEpPad1NhQXW3tP2rF/p3OVySEZLUJcvDX4D9rwB/SXq/84iZj2eakJS
+# uyZx0g95hsDK1Dhi3vypQgMtPtqRDdhX7PrXLj35C9EsUp/oeBFDmNy803JEEESG
+# f8WEwtcHIyekNC8l7Y52dNoDZKIR6/2UEYq3AW3OZGh8oAy/Dse6rUPS7fzHAak2
+# wPFcdM7YuUeqlTLRwGN8zrykTmbu6q2oh6Xp5VEaY77xOgwpYqjtSuWSRuA2BxTK
+# wkoOzmcpGNmRXAlU5r0nm9TFtsZFJLdFOa7afF6E7V1TAtijxDnuKFjAxC3KFFL4
+# w25QluB2O/tlI7fz+GMFh5JsjTJuv7oP3GBmxager3IQsEQ5hRo3BnHX1btmmJXx
+# mszboYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkGA1UEBhMC
 # VVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTswOQYDVQQDEzJEaWdpQ2VydCBU
 # cnVzdGVkIEc0IFJTQTQwOTYgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQBUSv85Sd
 # CDmmv9s/X+VhFjANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzELBgkqhkiG
-# 9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMDgxNTIxMjM0MFowLwYJKoZIhvcNAQkE
-# MSIEIGW+QHXc6eMMGGCFJmkUTjcLL3cwXXnIvdW0chEAWSH3MA0GCSqGSIb3DQEB
-# AQUABIICAFfeBlKfLJUU8l6sVTwV8pUUkZ2L/jmCDyJ1fJez7vVLg+alZUD/n3/f
-# JRgL4k7WwfSWDDm6aipCpGnUdHbDBiR9D/t21e/qTZl3G6yLGWcrr1VMmvlgcjWo
-# RZKFCpJgUL56Wx+YeFN9xXfPGm0+V09C3GWXtoLCk29hYca/tKv1gr82lfTHyuG3
-# KxOf1lqWWe+7gNRXN2PspYnebS4oVB9FPhq1PokHpeH9ByyG83hqgXYVpiD5hMIO
-# XcGW1Yjkt4pFpo508EmtHACq8W/OZsnZlyQPd2chbrelI7tI33E5HpLlaIXHy/AU
-# uqKL2EEuwFEmJShlT147WT8+IszJTrFcxxwKbz1LiNxBYvnl7GRjtMOeirAkVWvs
-# QZX7W7Lpu3qvmFAFgBNqdOLHe41T0fVtlHWm21wYt62K5FB01PWmyAyYMup1Sa69
-# 6wGU7H1a9eb5iYvsko/5TiBeo1getJ5pTfxQu1pGlG3PsTZK0PhxafFGcNCbj565
-# H3XqsV5Qv1P5LzgTAwVR7NZSNSDsrCLkmxnKV0hpb2MVqPAyMqyFmfhi29AQq0XY
-# S6dy5lz93pNq4m4Wah7t/g6+zuJZ3Z9LTuoklLodO38xJN0Uuqnh01qBLF8ZrS3e
-# p0w9idoyqj2+3Y7VlnF2TiNFmRANyB8DAjOrPHRwQ0gWC6mMfou6
+# 9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMDgxNTIxMjM1OVowLwYJKoZIhvcNAQkE
+# MSIEIHZpXuyNz0FhCS62bamyh/0SCiCDuwKL357cdJzZhbazMA0GCSqGSIb3DQEB
+# AQUABIICAA67lDB0xQnqw2H+VzdFQaGCV/+739ed2L03wzXAE2OhFkuHFVW9CxUY
+# FMRcDL4typDFapAINezszJNlAqTpX198KmzVd5WR+PM5qHbOrzx7Grf25CVHQhxS
+# pYQHDLrImFFKgqjt4drPbX15X5iNV+SP8puq6sHamqOaq/AbHDU+7eMHzNHORlLT
+# NcNkYXiCMPxlDlkigEAUBxC21LqrdbQuxzHIyX0NuT9LrkRQHHiC/j9qExIdK7yX
+# 5NxMlc9D6tDMMmppqrmK3Oc4SCNnw7t7Oj5bYL3FC9phoyej129Zq3xoFzvgS0g/
+# +Z01yN1ztPcDDmj9cRN43F9zxoFBGYveO5EaXWT84WfxD8WHAc8e97xzGYVv5jMQ
+# TNLZwAqxrLyOfrWqvR+6QdGvkvTe5+YFrLjU3nxIXCmk9xpgKZ0ewGgJEat9ChOL
+# kM9zxGCVVAngzAcCcHJtrt8h/JpnXdyhq9M8KJnnHUHamDgEqXhP+T7y7JNV8dBJ
+# /LcTNYyz/HjmNw2SD59M6jFmRRZh/u/ECdzKWueOFRznWWn7JmzXi3Q9WWpIX8Uk
+# ZZmRrxrBYJUrQHCYYsg+yTwEX3jxfOuARv45elARZqHVoYa4tVRkF/moknOlYCXA
+# II2NMUXm7CV2VpAPRy+UgcDJQVFxkdQbdvlLiRLkuRliTfQr2tYi
 # SIG # End signature block

@@ -1,34 +1,229 @@
 <#
-MIT License
+ .Synopsis
+  Diagnostic module for testing SMTP client submission.
 
-Copyright (c) 2023 Richard Fajardo
+ .Description
+  Diagnostic module for testing SMTP client submission. This function supports Basic (AUTH LOGIN) and Modern (XOAUTH2) authentication.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+ .Parameter From
+  The From SMTP email address.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+ .Parameter To
+  The To SMTP email address.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+ .Parameter UseSsl
+  Enables the use of TLS if supported by the remote MTA.
+
+ .Parameter AcceptUntrustedCertificates
+  Disables certificate validation
+
+ .Parameter SmtpServer
+  The remote SMTP server that will be accepting mail.
+
+ .Parameter Port
+  The remote network port number. By default the port is 587 if not specified.
+
+ .Parameter Credential
+  User credentials for basic authentication.
+
+ .Parameter AccessToken
+  Optional parameter to consume an external token.
+
+ .Parameter UserName
+  Username of the account for modern authentication. Required to build the auth blob.
+
+ .Parameter ClientId
+  Azure Application Client Id.
+
+ .Parameter TenantId
+  Azure / Office 365 Tenant Id.
+
+ .Parameter TimeoutSec
+  Optional parameter to force a timeout value other than the default of 10 seconds.
+
+ .Parameter Force
+  Optional parameter to force mail submission.
+
+ .Example
+   # Submit mail without credentials.
+   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -UseSsl -SmtpServer smtp.office365.com -Port 25 -Force
+
+ .Example
+   # Submit mail using legacy authentication.
+   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -UseSsl -SmtpServer smtp.office365.com -Port 587 -Credential <PSCredential>
+
+ .Example
+   # Submit mail using modern authentication.
+   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -UseSsl -SmtpServer smtp.office365.com -Port 587 -UserName <MailboxSmtp> -ClientId 9954180a-16f4-4683-aaaaaaaaaaaa -TenantId 1da8c747-60dd-4404-8418-aaaaaaaaaaaa
 #>
-using module .\Test-SmtpClientSubmission.psm1
-using module .\Test-SmtpClientCertificate.psm1
-using module .\Test-SmtpSaslAuthBlob.psm1
+using module .\InternalSmtpClient.psm1
+using module .\Utils.psm1
+using module .\Logger.psm1
+
+function Test-SmtpClientSubmission() {
+    [CmdletBinding(DefaultParameterSetName = "Default")]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateScript({
+                try {
+                    $null = [mailaddress]$_
+                    return $true
+                }
+                catch {
+                    throw "The specified string is not in the form required for an e-mail address."
+                }
+            })]
+        [string] $From,
+        [Parameter(Mandatory = $true)]
+        [ValidateScript({
+                try {
+                    $null = [mailaddress]$_
+                    return $true
+                }
+                catch {
+                    throw "The specified string is not in the form required for an e-mail address."
+                }
+            })]
+        [string] $To,
+        [Parameter(Mandatory = $false)]
+        [switch] $UseSsl,
+        [Parameter(Mandatory = $false)]
+        [switch] $AcceptUntrustedCertificates,
+        [Parameter(Mandatory = $true)]
+        [string] $SmtpServer,
+        [Parameter(Mandatory = $false)]
+        [int] $Port = 587,
+        [Parameter(Mandatory = $true, ParameterSetName = "Default")]
+        [Parameter(Mandatory = $false, ParameterSetName = "Force")]
+        [pscredential] $Credential,
+        [Parameter(Mandatory = $true, ParameterSetName = "UserProvidedToken")]
+        [string] $AccessToken,
+        [Parameter(Mandatory = $true, ParameterSetName = "UserProvidedToken")]
+        [Parameter(Mandatory = $true, ParameterSetName = "OAuth_app")]
+        [ValidateScript({
+                try {
+                    $null = [mailaddress]$_
+                    return $true
+                }
+                catch {
+                    throw "The specified string is not in the form required for an e-mail address."
+                }
+            })]
+        [string] $UserName,
+        [Parameter(Mandatory = $true, ParameterSetName = "OAuth_app")]
+        [ValidateScript({
+                [System.Guid]::Parse($_) | Out-Null
+                $true
+            })]
+        [guid] $ClientId,
+        [Parameter(Mandatory = $true, ParameterSetName = "OAuth_app")]
+        [ValidateScript({
+                [System.Guid]::Parse($_) | Out-Null
+                $true
+            })]
+        [guid] $TenantId,
+        [Parameter(Mandatory = $false, ParameterSetName = "OAuth_app")]
+        [SecureString] $ClientSecret,
+        [Parameter(Mandatory = $false)]
+        [ValidateScript({
+                if (Test-Path $_ -PathType Container) {
+                    $true
+                }
+                else {
+                    throw "The location '$_' does not exist. Check the path exist and try again."
+                }
+            })]
+        [string] $LogPath,
+        [Parameter(Mandatory = $false)]
+        [int] $TimeoutSec,
+        [Parameter(Mandatory = $true, ParameterSetName = "Force")]
+        [switch] $Force
+    )
+
+    # Check version
+    CheckVersionAndWarn
+    [Logger]$logger = New-Object Logger -ArgumentList $VerbosePreference
+    [InternalSmtpClient]$smtpClient = New-Object InternalSmtpClient -ArgumentList $logger
+    if ($TimeoutSec -gt 0){
+        $smtpClient.TimeoutSec = $TimeoutSec
+    }
+
+    # Check if hostname is IP address
+    $ipv4Regex = '^(?:25[0-5]|2[0-4]\d|[0-1]?\d{1,2})(?:\.(?:25[0-5]|2[0-4]\d|[0-1]?\d{1,2})){3}$'
+    if ($SmtpServer -match $ipv4Regex) {
+        $logger.LogMessage("Certificate validation will fail when using an IP address. Consider using a hostname or use -AcceptUntrustedCertificate swtich if testing.", "Warning", $null, $true, $true)
+    }
+    else {
+        # Verbose details for name resolution
+        $logger.LogMessage("Resolving hostname to IP addresses...", "Information", $true, $true)
+        $logger.LogMessage("# DNS Results", "Information", $true, $true)
+        $dns = (Resolve-DnsName -Name $smtpServer -QuickTimeout -ErrorAction SilentlyContinue)
+        if ($null -eq $dns) {
+            $logger.LogMessage("Failed to resolve hostname to IP addresses.", "Error", $null, $true, $true)
+        }
+        else {
+            $dns | ForEach-Object { if ($null -ne $_.IP4Address) { $logger.LogMessage($_.IP4Address, "Information", $true, $true) } }
+            $dns | ForEach-Object { if ($null -ne $_.IP6Address) { $logger.LogMessage($_.IP6Address, "Information", $true, $true) } }
+        }
+        $logger.LogMessage("", "Information", $true, $true)
+    }
+
+    try {
+        [bool]$authSuccess = $false
+
+        # Use OAUTH if the client id or access token was supplied
+        if (($null -ne $ClientId) -or (-not [System.String]::IsNullOrEmpty($AccessToken))) {
+            $logger.LogMessage("[Requesting token]", "Information", "Yellow", $false, $true)
+
+            # Obtain an access token
+            Import-Module MSAL.PS -ErrorAction Stop
+            $token = Get-SmtpAccessToken -ClientId $ClientId -TenantId $TenantId -ClientSecret $ClientSecret -AccessToken $AccessToken -UserName $UserName -VerbosePref $VerbosePreference
+
+            $smtpClient.Connect($SmtpServer, $Port, $UseSsl, $AcceptUntrustedCertificates, $null)
+            $authSuccess = $smtpClient.XOAUTH2Login($UserName, $token)
+        }
+        # Else if no client id check if credentials are available and use legacy auth
+        else {
+            $smtpClient.Connect($SmtpServer, $Port, $UseSsl, $AcceptUntrustedCertificates, $null)
+            if ($null -ne $Credential) {
+                # Legacy auth
+                $authSuccess = $smtpClient.AuthLogin($Credential)
+            }
+        }
+        # Send mail
+        if ($authSuccess -eq $true) {
+            $logger.LogMessage("AUTH LOGIN success", "Verbose", $false, $true)
+            $smtpClient.SendMail($From, $To)
+        }
+
+        # If force switch true, send mail anyway if auth failed or no creds available
+        if ($authSuccess -eq $false -and $Force -eq $true) {
+            $logger.LogMessage("Forcing mail submission", "Verbose", $false, $true)
+            $smtpClient.SendMail($From, $To)
+        }
+        elseif ($authSuccess -eq $false) {
+            $smtpClient.SmtpCmd("QUIT")
+        }
+        $logger.LogMessage("Done.", "Verbose", $false, $true)
+    }
+    catch {
+        Write-Error -ErrorRecord $_
+        $logger.LogError($_.Exception, $true)
+    }
+    finally {
+        $smtpClient.DisposeResources()
+        Write-Debug "Resources disposed."
+        $logger.LogMessage("[Disconnected]", "Information", "Red", $false, $true)
+
+        # Write log to file
+        $logger.WriteFile($LogPath)
+    }
+}
 # SIG # Begin signature block
 # MIIm8wYJKoZIhvcNAQcCoIIm5DCCJuACAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUG8S1XV6wyVesUjYnL9Zoiz2/
-# yu+ggiCbMIIFjTCCBHWgAwIBAgIQDpsYjvnQLefv21DiCEAYWjANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU7RzTkcIjAONHE0Nm5fh7y5RB
+# Da2ggiCbMIIFjTCCBHWgAwIBAgIQDpsYjvnQLefv21DiCEAYWjANBgkqhkiG9w0B
 # AQwFADBlMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVk
 # IElEIFJvb3QgQ0EwHhcNMjIwODAxMDAwMDAwWhcNMzExMTA5MjM1OTU5WjBiMQsw
@@ -207,30 +402,30 @@ using module .\Test-SmtpSaslAuthBlob.psm1
 # ZyBSU0E0MDk2IFNIQTM4NCAyMDIxIENBMQIQCvHxqYHQ0Os7oc4FauGTPjAJBgUr
 # DgMCGgUAoHgwGAYKKwYBBAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMx
 # DAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAjBgkq
-# hkiG9w0BCQQxFgQUMvnC6F7IVFj37iQAupp3LledtHwwDQYJKoZIhvcNAQEBBQAE
-# ggGAbQfFaOIgOx5jbUNgiSa5lKA7ZInSQgwcE0abnUk8qnX864+RLQu9MSXAItTs
-# tZpEJmnlYk3M8HZpEtzkpUJwjGm4/+pafUBYX/FWVIfjGxoGVm24tlan7lVvXpiu
-# IvbvtuuPv7VeAsysU304NVzPMkQJFqsHytxfieK2DxYGSbLQSJm0RoOMkiHZyLVi
-# EdJ9b6oxL+XgDDyAmIvLijJi+rmIuL2wG0bvPI6vWN4gIz0MT3KARwDNb/2XrJCb
-# 55ZBhPnvzlunP1hBDM4JDGOTlVxq7myZ26TK/BAk0BC/wwZfwFEzCs/zTvdwJh/w
-# i9RtvzwzXNVNrlGsAey8UvjPwmWhZKEpB2UBWITwO/VFJKr5GQNJXEDmJAkEpL5B
-# g86EubGeW847D7eXGIdmDtjKYDjfdTVKJlaskD5uH/TR6sz9RYxKjNxOaNlNBoXq
-# ZpQDsKQljdswc00vrtSHLudqz6s12Zuk3mb9MLlwxAzCamts117uR4XOrHqARctq
-# 0n4AoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkGA1UEBhMC
+# hkiG9w0BCQQxFgQUgimIvvt40gC/7N6+IwPW3VvQj6AwDQYJKoZIhvcNAQEBBQAE
+# ggGAfhlRx2kEZtQrVrcPKvwi1WNcSnWnH8Ed/EgRlw8TeoDHYWOiWLuFOXfMYjAy
+# 4iXFXFfww4awfFBzosGeGbdq6+Kx85fL4gE0BdjEc1Q6TWORuPWegIJ7K0hsrgsr
+# R59tmLgPccyzvJns7Ld0pir4Nq02Y5yFiyuBvf7QAW14M1elWe6CN0/iHP3dWpk7
+# XtvFEaxGOpnPO6K4tDHSIZljwovAr5IlhC8CNr5ghHIyeUZJvMeE32i/fD7bsYdL
+# TkVaPrKOgWJSEvY3T9avoQDIFXw+bpU3CfQDrD5tR1IBeOovHb2YIPlcM7CRmrch
+# VoeZbb6ag/Y4SgsnygGoX+s6VKVZ9vLhcZZTyyUkGLFJ2oYnSb05BPHDRgVSonBS
+# z7Pt0ewT7UaSAaevnvd5uv0srkWBRJPi74Lrk66rfZkz7LUQLORNt1nJ4YiMZrxU
+# pkS2eTCO2P2H43+n6mgfiF1CTfcsGDRNTAOMQXoMttnspK4H0qv+NoP9MEb3SLJt
+# ED4toYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkGA1UEBhMC
 # VVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTswOQYDVQQDEzJEaWdpQ2VydCBU
 # cnVzdGVkIEc0IFJTQTQwOTYgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQBUSv85Sd
 # CDmmv9s/X+VhFjANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzELBgkqhkiG
-# 9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMDgxNTIxMjM0MFowLwYJKoZIhvcNAQkE
-# MSIEIGW+QHXc6eMMGGCFJmkUTjcLL3cwXXnIvdW0chEAWSH3MA0GCSqGSIb3DQEB
-# AQUABIICAFfeBlKfLJUU8l6sVTwV8pUUkZ2L/jmCDyJ1fJez7vVLg+alZUD/n3/f
-# JRgL4k7WwfSWDDm6aipCpGnUdHbDBiR9D/t21e/qTZl3G6yLGWcrr1VMmvlgcjWo
-# RZKFCpJgUL56Wx+YeFN9xXfPGm0+V09C3GWXtoLCk29hYca/tKv1gr82lfTHyuG3
-# KxOf1lqWWe+7gNRXN2PspYnebS4oVB9FPhq1PokHpeH9ByyG83hqgXYVpiD5hMIO
-# XcGW1Yjkt4pFpo508EmtHACq8W/OZsnZlyQPd2chbrelI7tI33E5HpLlaIXHy/AU
-# uqKL2EEuwFEmJShlT147WT8+IszJTrFcxxwKbz1LiNxBYvnl7GRjtMOeirAkVWvs
-# QZX7W7Lpu3qvmFAFgBNqdOLHe41T0fVtlHWm21wYt62K5FB01PWmyAyYMup1Sa69
-# 6wGU7H1a9eb5iYvsko/5TiBeo1getJ5pTfxQu1pGlG3PsTZK0PhxafFGcNCbj565
-# H3XqsV5Qv1P5LzgTAwVR7NZSNSDsrCLkmxnKV0hpb2MVqPAyMqyFmfhi29AQq0XY
-# S6dy5lz93pNq4m4Wah7t/g6+zuJZ3Z9LTuoklLodO38xJN0Uuqnh01qBLF8ZrS3e
-# p0w9idoyqj2+3Y7VlnF2TiNFmRANyB8DAjOrPHRwQ0gWC6mMfou6
+# 9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMDgxNTIxMjM1NFowLwYJKoZIhvcNAQkE
+# MSIEIBtGqlBgnY0P+UziWAT6yMbDFKdVIRj4TyzYMFDKQk1nMA0GCSqGSIb3DQEB
+# AQUABIICABM+2sS2wj+HmSPwmwlyFGXsr5fnWFIqS+D8pSvfY0fOmCnot8c29Viq
+# cSifd5w5hN//BjIjqzssmbEZYxymeU4MDhf3EcmKdGMk/uCV8ON54h7ue5qLRAO6
+# uNj1+Wq4aS4PDfeVUEFM1/er4OS3T7CiN3k1LIx4rN1YlD4yXxpJohNAVmbVqaZG
+# d7deDKQm8rkKlOxE5o6UMN6PKMsTsTI+jWeprGc7K8jOUQQS19gxbWhUwUojSK8T
+# 45HJlwVuGWUyfmXWV63eA9NTfZScaEMECpuHVmATRFMRN8Pbgvmi8vzNJgu1FLlR
+# WueZIbi6Au1xGfkxo9IyRKLkc0vvquadYTS+P2EplPad7nAwShOEgk29dFMp6nDo
+# bWdNtT3aRfpGIIrTDJTrtQzBNrAdQVh0jlxqbMpOC9rMQ9IxDA3vFl/EfbTIjGrL
+# +MJETnwxrh8r7nMNybUecO0dpk4TyNcXWgIjvkfUFgG2z+SyTaYe/faEL30s3jMX
+# sw7q4dnTgMmugcLloqyTYgYGXGaZircbfykw3zOSs6rvJTfuFwPz+0QwOvpjuYdU
+# ILQOD/rvExPg4TMukp/nazu9RJ/GiQg6CbUopTgumlMeUjL3gwWpCg5a4DuHr0jy
+# MoC5A2Orbl68SiCWj7NIe1qKrI40kNawr0iNTmuzNJ7SYN4KNiio
 # SIG # End signature block

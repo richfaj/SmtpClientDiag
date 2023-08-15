@@ -1,34 +1,111 @@
 <#
-MIT License
+ .Synopsis
+  Diagnostic module for testing SMTP connector attribution.
 
-Copyright (c) 2023 Richard Fajardo
+ .Description
+  Diagnostic module for testing SMTP connector attribution.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+ .Parameter From
+  The From SMTP email address.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+ .Parameter To
+  The To SMTP email address.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+ .Parameter SmtpServer
+  The remote SMTP server that will be accepting mail.
+
+ .Parameter CertificateThumbprint
+  The client certificate thumbprint to use for authentication.
+
+ .Parameter LogPath
+  The path to the log file.
+
+ .Example
+   # Submit mail with client certificate
+   Test-SmtpClientCertificate -From <FromAddress> -To <RecipientAddress> -SmtpServer your-domain.mail.protection.outlook.com -CertificateThumbprint <thumbprint>
 #>
-using module .\Test-SmtpClientSubmission.psm1
-using module .\Test-SmtpClientCertificate.psm1
-using module .\Test-SmtpSaslAuthBlob.psm1
+
+using module .\InternalSmtpClient.psm1
+using module .\Utils.psm1
+using module .\Logger.psm1
+
+function Test-SmtpClientCertificate() {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateScript({
+                try {
+                    $null = [mailaddress]$_
+                    return $true
+                }
+                catch {
+                    throw "The specified string is not in the form required for an e-mail address."
+                }
+            })]
+        [string] $From,
+        [Parameter(Mandatory = $true)]
+        [ValidateScript({
+                try {
+                    $null = [mailaddress]$_
+                    return $true
+                }
+                catch {
+                    throw "The specified string is not in the form required for an e-mail address."
+                }
+            })]
+        [string] $To,
+        [Parameter(Mandatory = $true)]
+        [string] $SmtpServer,
+        [Parameter(Mandatory = $true)]
+        [string] $CertificateThumbprint,
+        [Parameter(Mandatory = $false)]
+        [ValidateScript({
+                if (Test-Path $_ -PathType Container) {
+                    $true
+                }
+                else {
+                    throw "The location '$_' does not exist. Check the path exist and try again."
+                }
+            })]
+        [string] $LogPath
+    )
+
+    # Check version
+    CheckVersionAndWarn
+
+    # Check if running as administrator
+    # Elevation is needed to gain access to the certificate private key
+
+    if ((New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) -eq $false) {
+        Write-Warning "Missing elevation! Elevation may be required to gain access to the certificate's private key."
+    }
+
+    [Logger]$logger = New-Object Logger -ArgumentList $VerbosePreference
+    [InternalSmtpClient]$smtpClient = New-Object InternalSmtpClient -ArgumentList $logger
+    [System.Security.Cryptography.X509Certificates.X509Certificate2]$clientCertificate = $null
+
+    try {
+        $clientCertificate = RetrieveCertificateFromCertStore($CertificateThumbprint)
+        $smtpClient.Connect($SmtpServer, 25, $true, $false, $clientCertificate)
+        $smtpClient.SendMail($From, $To)
+    }
+    catch {
+        Write-Error -ErrorRecord $_
+        $logger.LogError($_.Exception, $true)
+    }
+    finally {
+        $smtpClient.DisposeResources()
+        Write-Debug "Resources disposed."
+        $logger.LogMessage("[Disconnected]", "Information", "Red", $false, $true)
+
+        # Write log to file
+        $logger.WriteFile($LogPath)
+    }
+}
 # SIG # Begin signature block
 # MIIm8wYJKoZIhvcNAQcCoIIm5DCCJuACAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUG8S1XV6wyVesUjYnL9Zoiz2/
-# yu+ggiCbMIIFjTCCBHWgAwIBAgIQDpsYjvnQLefv21DiCEAYWjANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU+dkJfY8mQ8XEF7vuU28uOPzk
+# YXSggiCbMIIFjTCCBHWgAwIBAgIQDpsYjvnQLefv21DiCEAYWjANBgkqhkiG9w0B
 # AQwFADBlMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVk
 # IElEIFJvb3QgQ0EwHhcNMjIwODAxMDAwMDAwWhcNMzExMTA5MjM1OTU5WjBiMQsw
@@ -207,30 +284,30 @@ using module .\Test-SmtpSaslAuthBlob.psm1
 # ZyBSU0E0MDk2IFNIQTM4NCAyMDIxIENBMQIQCvHxqYHQ0Os7oc4FauGTPjAJBgUr
 # DgMCGgUAoHgwGAYKKwYBBAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMx
 # DAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAjBgkq
-# hkiG9w0BCQQxFgQUMvnC6F7IVFj37iQAupp3LledtHwwDQYJKoZIhvcNAQEBBQAE
-# ggGAbQfFaOIgOx5jbUNgiSa5lKA7ZInSQgwcE0abnUk8qnX864+RLQu9MSXAItTs
-# tZpEJmnlYk3M8HZpEtzkpUJwjGm4/+pafUBYX/FWVIfjGxoGVm24tlan7lVvXpiu
-# IvbvtuuPv7VeAsysU304NVzPMkQJFqsHytxfieK2DxYGSbLQSJm0RoOMkiHZyLVi
-# EdJ9b6oxL+XgDDyAmIvLijJi+rmIuL2wG0bvPI6vWN4gIz0MT3KARwDNb/2XrJCb
-# 55ZBhPnvzlunP1hBDM4JDGOTlVxq7myZ26TK/BAk0BC/wwZfwFEzCs/zTvdwJh/w
-# i9RtvzwzXNVNrlGsAey8UvjPwmWhZKEpB2UBWITwO/VFJKr5GQNJXEDmJAkEpL5B
-# g86EubGeW847D7eXGIdmDtjKYDjfdTVKJlaskD5uH/TR6sz9RYxKjNxOaNlNBoXq
-# ZpQDsKQljdswc00vrtSHLudqz6s12Zuk3mb9MLlwxAzCamts117uR4XOrHqARctq
-# 0n4AoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkGA1UEBhMC
+# hkiG9w0BCQQxFgQUNV3D8UMkMIV6w2cFnTuoFXdXI5wwDQYJKoZIhvcNAQEBBQAE
+# ggGAeoiJu9tdz0NILpLN2kMCasI7QSqZw+U/92oA7l9VZFGu1BS911QyPdYKw6Mb
+# L73oZUBrDIDMddZxLGciEt2t+fB95kAkgAjD9xcstJjff0dfPOe2d9iR6xa13z74
+# mEK7joyYYza1xE0uHbvlS9xa3lkVEFQvhV/AGvBoKGsXA33t23bG3zeIXnIVXS98
+# hTHOWcFtXO7KamR3LO3bdpI3RtychqKJz0BAoM2Mxcpxp8zx/uqo3AsfPvyreGf9
+# WuaFWWOrYiqGSsTYCQDx38YIS7uP8etZ7viwZlDqKAcePg8yEPs4SySBp8sIQZuu
+# cEsOHzJUL7KRWY8ohZur6i3S4ZHR/mL6h+8WS6tToFvrMtmufo/wiWHuys6Hb7zI
+# +NK1wX83fUYMBhcp6DWjY1IAH25OIZujYW0YajUily97CSVulxNnFYlGFZCeuHk2
+# cOVUc2Wfp47nOyHy20mZ+fNFZGhxJ2vssO127IBZ6WpHdo4aM6RU2CV6EI8T0Jtq
+# HfbUoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkGA1UEBhMC
 # VVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTswOQYDVQQDEzJEaWdpQ2VydCBU
 # cnVzdGVkIEc0IFJTQTQwOTYgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQBUSv85Sd
 # CDmmv9s/X+VhFjANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzELBgkqhkiG
-# 9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMDgxNTIxMjM0MFowLwYJKoZIhvcNAQkE
-# MSIEIGW+QHXc6eMMGGCFJmkUTjcLL3cwXXnIvdW0chEAWSH3MA0GCSqGSIb3DQEB
-# AQUABIICAFfeBlKfLJUU8l6sVTwV8pUUkZ2L/jmCDyJ1fJez7vVLg+alZUD/n3/f
-# JRgL4k7WwfSWDDm6aipCpGnUdHbDBiR9D/t21e/qTZl3G6yLGWcrr1VMmvlgcjWo
-# RZKFCpJgUL56Wx+YeFN9xXfPGm0+V09C3GWXtoLCk29hYca/tKv1gr82lfTHyuG3
-# KxOf1lqWWe+7gNRXN2PspYnebS4oVB9FPhq1PokHpeH9ByyG83hqgXYVpiD5hMIO
-# XcGW1Yjkt4pFpo508EmtHACq8W/OZsnZlyQPd2chbrelI7tI33E5HpLlaIXHy/AU
-# uqKL2EEuwFEmJShlT147WT8+IszJTrFcxxwKbz1LiNxBYvnl7GRjtMOeirAkVWvs
-# QZX7W7Lpu3qvmFAFgBNqdOLHe41T0fVtlHWm21wYt62K5FB01PWmyAyYMup1Sa69
-# 6wGU7H1a9eb5iYvsko/5TiBeo1getJ5pTfxQu1pGlG3PsTZK0PhxafFGcNCbj565
-# H3XqsV5Qv1P5LzgTAwVR7NZSNSDsrCLkmxnKV0hpb2MVqPAyMqyFmfhi29AQq0XY
-# S6dy5lz93pNq4m4Wah7t/g6+zuJZ3Z9LTuoklLodO38xJN0Uuqnh01qBLF8ZrS3e
-# p0w9idoyqj2+3Y7VlnF2TiNFmRANyB8DAjOrPHRwQ0gWC6mMfou6
+# 9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMDgxNTIxMjM0OVowLwYJKoZIhvcNAQkE
+# MSIEIG/jLIH3Y+NGd5NKRt7KT4TdKpopZKIBAbtwG0K6MEGJMA0GCSqGSIb3DQEB
+# AQUABIICAD9CUNevnXBg1z3eucwqb1iIX1SdKuinHemGDi0bW+rvORFdcAlUiDgE
+# FUHsYYdhCczTI1618m4KPPTAroebSDFziA+wk8BAKI0VsZ4UofREjCKgSpTWmPw+
+# 2gjuZiYU4GootNVAt2ucWVor0KkccYXPM4DhoW7Ioh7PxArnKQ2bfTjFp6WVADjR
+# PmF0bqLPaDPAL2wUiSGveTjLpG9rzIBO+793dVKdL95Q4VsBEmOhPuC2/jwXfvPn
+# cZl/BT+23ZyPHBx0qpMsUtS/sEFHUCZyA0xCSHMsYAijk+2XiiGJdxgb/3x1yZ72
+# yDi9OrnHyw7zwPMiK+5o0Y49tLoC1HpO3dZeIGGE7c+uIeyT3254hrON46OAv/Xi
+# LfnJZYCZzTawBWZXzGnzw8CWSIoQ8rp8VSEXZzrxQ5+fl/PwPKBJtbrcEYAb8FSM
+# IEH5RMjSxCfYIsGZVBFBu+5E/M4oK4AxbxaeQHHVl0Owo0rLvlio0kOqKXOcSJtN
+# s7NOrV+IqqIzYuBpS3pm3oi1XwyDnAC7mlY+SP9VyKaehfcfeE0+7G4v+QBBycJW
+# smH/hSG6JuWH28RR48GkAs2mIJQVY14TGbfmshSnmQpfcevhI8OBkcAuW5Wn1eqW
+# aRqI76zjSJX+0rhzYc+/Y/+xaw7QqQiraEeMzDSw2mRtEw34OG2H
 # SIG # End signature block

@@ -1,34 +1,243 @@
 <#
-MIT License
+ .Synopsis
+  Diagnostic module for SMTP Sasl Auth Blob
 
-Copyright (c) 2023 Richard Fajardo
+ .Description
+  Utility module for testing SMTP Sasl Auth Blob for common issues and misconfigurations.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+ .Parameter EncodedAuthBlob
+  Base64 encoded auth blob to test.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+ .Example
+   # Test an auth blob
+   Test-SmtpSaslAuthBlob -EncodedAuthBlob 'dXNlcj1zb21ldXNlckBleGFtcGxlLmNvbQFhdXRoPUJlYXJlciB5YTI5LnZGOWRmdDRxbVRjMk52YjNSbGNrQmhkSFJoZG1semRHRXVZMjl0Q2cBAQ==' -Verbose
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+    AuthBlobUserName        : someuser@example.com
+    AuthBlobToken           : dXNlcj1zb21ldXNlckBleGFtcGxlLmNvbQFhdXRoPUJlYXJlciB5YTI5LnZGOWRmdDRxbVRjMk52YjNSbGNrQmhkSFJoZG1semRHRXVZMjl0Q2cBAQ==
+    OAuthTokenAudience      : https://outlook.office.com
+    OAuthTokenScopes        : SMTP.Send
+    OAuthTokenRoles         :
+    OAuthTokenUpn           : someuser@example.com
+    OAuthTokenExpirationUtc : 01/01/1970 12:00:00 AM
+    ApplicationId           : 9954180a-16f4-4683-aaaaaaaaaaaa
+    AppDisplayName          : My OAuth SMTP Application
+    IsAuthBlobValid         : True
+    IsAuthTokenValid        : True
 #>
-using module .\Test-SmtpClientSubmission.psm1
-using module .\Test-SmtpClientCertificate.psm1
-using module .\Test-SmtpSaslAuthBlob.psm1
+function Test-SmtpSaslAuthBlob() {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false, Position = 0)]
+        [string]$EncodedAuthBlob
+    )
+
+    $Script:BlobResult = [PSCustomObject] @{
+        AuthBlobUserName        = $null
+        AuthBlobToken           = $null
+        OAuthTokenAudience      = $null
+        OAuthTokenScopes        = $null
+        OAuthTokenRoles         = $null
+        OAuthTokenUpn           = $null
+        OAuthTokenExpirationUtc = $null
+        ApplicationId           = $null
+        AppDisplayName          = $null
+        IsAuthBlobValid         = $false
+        IsAuthTokenValid        = $false
+    }
+
+    # Write error if no auth blob is provided instead of making parameter mandatory.
+    # Making it mandatory would truncate the string if user provided after execution
+    if ([string]::IsNullOrEmpty($EncodedAuthBlob)) {
+        Write-Error "AuthBlob is null or empty. Please supply a value to test." -ErrorAction Stop
+    }
+
+    $decodedAuthBlob = $null
+
+    try {
+        $decodedAuthBlob = DecodeBase64Value($EncodedAuthBlob)
+    }
+    catch {
+        Write-Verbose "Failed to decode auth blob: $EncodedAuthBlob"
+        Write-Error "AuthBlob is not valid base64 encoded string. Check your input and try again." -ErrorAction Stop
+    }
+
+    [char[]]$charArray = $decodedAuthBlob.ToCharArray()
+    [int]$userIndex = $decodedAuthBlob.IndexOf("user=")
+    [int]$authIndex = $decodedAuthBlob.IndexOf("auth=")
+    [int]$bearerIndex = $decodedAuthBlob.IndexOf("Bearer ")
+    [char]$ctrlA = [char]0x01
+
+    # Validate that auth blob is correctly formatted
+    # Example: base64("user=" + userName + "^Aauth=Bearer " + accessToken + "^A^A")
+    # ^A represents a Control + A (%x01) character
+
+    # Check if 'user' is present at the beginning of the string
+    if ($userIndex -ne 0) {
+        Write-Verbose "Invalid Authblob. Expected 'user' at index 0. IndexOf('user='):$userIndex"
+        Write-Error "Authblob is incorrectly formatted. User not found." -ErrorAction Stop
+    }
+
+    # Check if 'auth' is present after 'user'
+    if ($authIndex -eq -1) {
+        Write-Verbose "Invalid Authblob. 'auth' not found in auth blob."
+        Write-Error "Authblob is incorrectly formatted. Auth not found." -ErrorAction Stop
+    }
+
+    # Check if 'Bearer' is present after 'auth'
+    if ($bearerIndex -eq -1 -or $bearerIndex -lt $authIndex) {
+        Write-Verbose "Invalid Authblob. 'Bearer' not found in auth blob or not in correct position. IndexOf('Bearer '):$bearerIndex"
+        Write-Error "Authblob is incorrectly formatted. Bearer not found." -ErrorAction Stop
+    }
+
+    # Check if CTRL-A character is present before auth
+    if ($charArray[$authIndex - 1] -ne $ctrlA) {
+        $Script:BlobResult | Format-List
+        $charHex = GetCharHexValue($charArray[$authIndex - 2])
+        Write-Verbose "Invalid Authblob. Expected ascii character 0x01 before 'auth' but found char '0x$charHex' at index '$authIndex'."
+        Write-Error "Authblob is incorreclty formatted. Missing CTRL-A character." -ErrorAction Stop
+    }
+
+    # Check if CTRL-A is present at the end of the string
+    if ($charArray[-1] -ne $ctrlA -and $charArray[-2] -ne $ctrlA) {
+        $Script:BlobResult | Format-List
+        Write-Verbose "Invalid Authblob. Expected ascii character 0x01 0x01 at end of string but found '$($charArray[-1])$($charArray[-2])'."
+        Write-Error "Authblob is incorreclty formatted. Missing CTRL-A character." -ErrorAction Stop
+    }
+
+    $Script:BlobResult.AuthBlobUserName = $decodedAuthBlob.Substring($userIndex + 5, $authIndex - 6)
+    $Script:BlobResult.AuthBlobToken = $decodedAuthBlob.Substring($authIndex + 5, $decodedAuthBlob.Length - $authIndex - 7).Replace("Bearer ", "")
+
+    if ([string]::IsNullOrEmpty($Script:BlobResult.AuthBlobUserName)) {
+        $Script:BlobResult | Format-List
+        Write-Verbose "Found 'user' in auth blob but it contains no value."
+        Write-Error "AuthBlob does not contain a user" -ErrorAction Stop
+    }
+
+    if ([string]::IsNullOrEmpty($Script:BlobResult.AuthBlobToken)) {
+        $Script:BlobResult | Format-List
+        Write-Verbose "Found 'auth' in auth blob but it contains no value."
+        Write-Error "AuthBlob does not contain a token" -ErrorAction Stop
+    }
+
+    try {
+        CheckAccessToken($Script:BlobResult.AuthBlobToken)
+    }
+    catch {
+        $Script:BlobResult | Format-List
+        Write-Error $_.Exception
+        Write-Error "Token in auth blob is invalid." -ErrorAction Stop
+    }
+
+    # If we get here, we're good
+    $Script:BlobResult.IsAuthBlobValid = $true
+    return $Script:BlobResult
+}
+
+function CheckAccessToken($encodedToken) {
+    if ([string]::IsNullOrEmpty($encodedToken)) {
+        Write-Verbose "Token is null or empty. Skipping token verfication."
+        $Script:BlobResult.IsAuthTokenValid = $false
+        return
+    }
+
+    [bool]$tokenValid = $true
+    [string]$decodedToken = $null
+    [object]$token = $null
+    [bool]$isAppAuth = $false
+    [string[]]$tokenParts = $encodedToken.Split(".")
+
+    # Token should have header, payload and signature
+    if ($tokenParts.Count -ne 3 -or [string]::IsNullOrEmpty($tokenParts[0]) -or [string]::IsNullOrEmpty($tokenParts[1])) {
+        throw "Invalid token. Token header or payload is null or empty."
+    }
+
+    # Can header and payload be decoded? Throws exception if not
+    try {
+        DecodeBase64Value($tokenParts[0]) | Out-Null
+        $decodedToken = DecodeBase64Value($tokenParts[1])
+        $token = ConvertFrom-Json $decodedToken
+    }
+    catch {
+        throw "Failed to decode authentication token or token is not valid JSON."
+    }
+
+    $Script:BlobResult.OAuthTokenAudience = $token.aud
+    $Script:BlobResult.OAuthTokenUpn = $token.upn
+    $Script:BlobResult.OAuthTokenScopes = $token.scp
+    $Script:BlobResult.OAuthTokenRoles = $token.roles
+    $Script:BlobResult.OAuthTokenExpirationUtc = [System.DateTimeOffSet]::FromUnixTimeSeconds($token.exp).UtcDateTime
+    $Script:BlobResult.ApplicationId = $token.appid
+    $Script:BlobResult.AppDisplayName = $token.app_displayname
+
+    if (-not [string]::IsNullOrEmpty($token)) {
+        # Check for correct audience claim
+        if ($token.aud -ne "https://outlook.office365.com" -and $token.aud -ne "https://outlook.office.com") {
+            $tokenValid = $false
+            Write-Verbose "Unexpected audience claim. Expected 'https://outlook.office365.com' or 'https://outlook.office.com' but found '$($token.aud)'."
+            Write-Warning "Authentication token contains an invalid audience claim for SMTP Client Submission."
+        }
+
+        # Likely client credential flow if UPN claim is null or empty
+        if ([string]::IsNullOrEmpty($token.upn)) {
+            $isAppAuth = $true
+            Write-Verbose "UPN claim is null or empty."
+            Write-Warning "Application authentication detected. UPN claim not found in token."
+        }
+
+        # If delegated permission check if upn in token matches username in auth blob
+        # Token can be valid but must be for the same user as the auth blob
+        if (-not $isAppAuth) {
+            if ($token.upn -ne $Script:BlobResult.AuthBlobUserName) {
+                $tokenValid = $false
+                Write-Verbose "UPN claim in token does not match username in auth blob. UPN claim:'$($token.upn)' Username:'$($Script:BlobResult.AuthBlobUserName)'."
+                Write-Warning "UPN in authentication token and AuthBlob do not match."
+            }
+        }
+
+        # If using client credential flow check the roles claim
+        if ($isAppAuth) {
+            Write-Verbose "Checking roles claim for SMTP.SendAsApp permission."
+            $permissions = $token.roles.Split()
+            if (-not $permissions.Contains("SMTP.SendAsApp")) {
+                $tokenValid = $false
+                Write-Verbose "Not checking scopes claim as this is not user authentication."
+                Write-Verbose "Invalid roles in token. Expected 'SMTP.SendAsApp' but found '$($token.roles)'."
+                Write-Warning "Required permission for SMTP Client Submission not found in token."
+            }
+        }
+
+        # Else check the scopes claim
+        else {
+            Write-Verbose "Not checking roles claim as this is not application authentication."
+            Write-Verbose "Checking scopes claim for SMTP.Send permission."
+            $permissions = $token.scp.Split()
+            if (-not $permissions.Contains("SMTP.Send")) {
+                $tokenValid = $false
+                Write-Verbose "Invalid scope in token. Expected 'SMTP.Send' but found '$($token.scp)'."
+                Write-Warning "Required permission for SMTP Client Submission not found in token."
+            }
+        }
+
+        # Check if token is expired
+        $currentDateTime = Get-Date
+
+        if ($currentDateTime.ToUniversalTime() -gt $Script:BlobResult.OAuthTokenExpirationUtc) {
+            $tokenValid = $false
+            Write-Verbose "Token has expired. Token expiration date: '$tokenExpiration'. Current date: '$currentDateTime'."
+            Write-Warning "Authentication token has expired."
+        }
+    }
+    else {
+        $tokenValid = $false
+    }
+
+    $Script:BlobResult.IsAuthTokenValid = $tokenValid
+}
 # SIG # Begin signature block
 # MIIm8wYJKoZIhvcNAQcCoIIm5DCCJuACAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUG8S1XV6wyVesUjYnL9Zoiz2/
-# yu+ggiCbMIIFjTCCBHWgAwIBAgIQDpsYjvnQLefv21DiCEAYWjANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUDr2koqXevSQMW398RtGBSyZ7
+# +QyggiCbMIIFjTCCBHWgAwIBAgIQDpsYjvnQLefv21DiCEAYWjANBgkqhkiG9w0B
 # AQwFADBlMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVk
 # IElEIFJvb3QgQ0EwHhcNMjIwODAxMDAwMDAwWhcNMzExMTA5MjM1OTU5WjBiMQsw
@@ -207,30 +416,30 @@ using module .\Test-SmtpSaslAuthBlob.psm1
 # ZyBSU0E0MDk2IFNIQTM4NCAyMDIxIENBMQIQCvHxqYHQ0Os7oc4FauGTPjAJBgUr
 # DgMCGgUAoHgwGAYKKwYBBAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMx
 # DAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAjBgkq
-# hkiG9w0BCQQxFgQUMvnC6F7IVFj37iQAupp3LledtHwwDQYJKoZIhvcNAQEBBQAE
-# ggGAbQfFaOIgOx5jbUNgiSa5lKA7ZInSQgwcE0abnUk8qnX864+RLQu9MSXAItTs
-# tZpEJmnlYk3M8HZpEtzkpUJwjGm4/+pafUBYX/FWVIfjGxoGVm24tlan7lVvXpiu
-# IvbvtuuPv7VeAsysU304NVzPMkQJFqsHytxfieK2DxYGSbLQSJm0RoOMkiHZyLVi
-# EdJ9b6oxL+XgDDyAmIvLijJi+rmIuL2wG0bvPI6vWN4gIz0MT3KARwDNb/2XrJCb
-# 55ZBhPnvzlunP1hBDM4JDGOTlVxq7myZ26TK/BAk0BC/wwZfwFEzCs/zTvdwJh/w
-# i9RtvzwzXNVNrlGsAey8UvjPwmWhZKEpB2UBWITwO/VFJKr5GQNJXEDmJAkEpL5B
-# g86EubGeW847D7eXGIdmDtjKYDjfdTVKJlaskD5uH/TR6sz9RYxKjNxOaNlNBoXq
-# ZpQDsKQljdswc00vrtSHLudqz6s12Zuk3mb9MLlwxAzCamts117uR4XOrHqARctq
-# 0n4AoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkGA1UEBhMC
+# hkiG9w0BCQQxFgQUWvbaWhDGCbzgwM55OjCLwUhCQMowDQYJKoZIhvcNAQEBBQAE
+# ggGAH5q0yG9hby5JjRLrqikyjr6CEL1Wls7AtPqjmt1Yp45hE3+e/fIhWUyGgLWB
+# huuTOPtsHwix9kBkoZqB7M1vEclj+rox60ahBMXD3fbPgJazbwiWhGHRzP0zEQPX
+# dMvwCDJ3mxvtwunHF9UxaTZJJ1fjiHR6UgzB+zqxdxxuH+kYwT9RPXJXVp8j5vEe
+# Nw2Yr91nJjp8iwxuwBPBAYYLv+0BzPqR6hqs9VDbjiY5qHS+Fd2Acrb4aMDm/Ukr
+# a3PId0VYUpuMqL/yT6MGUzo4huNjZqFOe1cCYN2ckE1vEEODHBxoA0qlzdaGfEwt
+# 2gieMCLoHEa0WMD2jlEIYig1T7VRPYayg1UAu/b1ushXCUzLQeAfsp62fR4SWWTk
+# 3N2t5JbYzsMndcaNPuWTcP+2R7w2KftJBSMY9tD8eNqmDkkLCH+h3SMZaxFcW3wZ
+# BrF/cqB0DVhyN6beMNJvc11MsW4drug6HnxAnBAgWZMQLHYnoME+hUDG+nH90YcH
+# UBweoYIDIDCCAxwGCSqGSIb3DQEJBjGCAw0wggMJAgEBMHcwYzELMAkGA1UEBhMC
 # VVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTswOQYDVQQDEzJEaWdpQ2VydCBU
 # cnVzdGVkIEc0IFJTQTQwOTYgU0hBMjU2IFRpbWVTdGFtcGluZyBDQQIQBUSv85Sd
 # CDmmv9s/X+VhFjANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzELBgkqhkiG
-# 9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMDgxNTIxMjM0MFowLwYJKoZIhvcNAQkE
-# MSIEIGW+QHXc6eMMGGCFJmkUTjcLL3cwXXnIvdW0chEAWSH3MA0GCSqGSIb3DQEB
-# AQUABIICAFfeBlKfLJUU8l6sVTwV8pUUkZ2L/jmCDyJ1fJez7vVLg+alZUD/n3/f
-# JRgL4k7WwfSWDDm6aipCpGnUdHbDBiR9D/t21e/qTZl3G6yLGWcrr1VMmvlgcjWo
-# RZKFCpJgUL56Wx+YeFN9xXfPGm0+V09C3GWXtoLCk29hYca/tKv1gr82lfTHyuG3
-# KxOf1lqWWe+7gNRXN2PspYnebS4oVB9FPhq1PokHpeH9ByyG83hqgXYVpiD5hMIO
-# XcGW1Yjkt4pFpo508EmtHACq8W/OZsnZlyQPd2chbrelI7tI33E5HpLlaIXHy/AU
-# uqKL2EEuwFEmJShlT147WT8+IszJTrFcxxwKbz1LiNxBYvnl7GRjtMOeirAkVWvs
-# QZX7W7Lpu3qvmFAFgBNqdOLHe41T0fVtlHWm21wYt62K5FB01PWmyAyYMup1Sa69
-# 6wGU7H1a9eb5iYvsko/5TiBeo1getJ5pTfxQu1pGlG3PsTZK0PhxafFGcNCbj565
-# H3XqsV5Qv1P5LzgTAwVR7NZSNSDsrCLkmxnKV0hpb2MVqPAyMqyFmfhi29AQq0XY
-# S6dy5lz93pNq4m4Wah7t/g6+zuJZ3Z9LTuoklLodO38xJN0Uuqnh01qBLF8ZrS3e
-# p0w9idoyqj2+3Y7VlnF2TiNFmRANyB8DAjOrPHRwQ0gWC6mMfou6
+# 9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIzMDgxNTIxMjQwOVowLwYJKoZIhvcNAQkE
+# MSIEIKGsfjeTWXjXY+k2MeYAISKuExoD0DcMJ24wBLYWzwQqMA0GCSqGSIb3DQEB
+# AQUABIICAIWu8k1luFrnJigdXutsWR36mphViaUvoJq+VazXdHTrhbdnGWh9BCUr
+# 4aOrGLih2DkaFu/jYsKji20vJ5II+DzeoAtoHyY4HBF40+nZBTKXabN+fYEclFHo
+# D8I8Q73ms2+AjXafgPWFFkT4iYaXH5yKPBaqw7stPd3vWb+mHUj6+YszFher1tdr
+# ONLWER7h844rs2gn22B09PjtgZMK0C20qpZtjAmASivYc9Y3xkJdOOOLXempUUyH
+# 4ZtXgZKHda2p5FW5ayl54OCgxX/LvikJLIC3F2/Xfh0ZJ/sPPwT0Tj/KleLNqlpG
+# 7DGjXGB/+uYUaz5isPi5t3S4jonF5DY2B1rWht9F5BIFq0IP4ksUc4yO6bSKVjAH
+# nbZevUJCfZvm8V8MMRrEaZIjxVRRh/xLJQPOVM5ykFkawAWc4+5G9gQ0oHgR/Zn6
+# PY1m+2v8z6bTDF9ucFe3Yw1oTKk8Ob2onktgJyK6Btl2TKO5Y+7ndovsi0K+pCVr
+# bWKDr9WQZA6OGwUHjgCV9xaTX7GelS+W4dpNPFoe0cmyKXQ/M5Grkq/Y87Sa9CJu
+# f7CnU+840ynzePfrgxub7CuOrfMn2feKlsKEKUWuN2IXicyNxpf+nLIJIzKR42cE
+# IfGwLwHZ7oft2Ro9fqP7+NZGLT8A0xZxXpEecx8GUSNFe7Mx/+qs
 # SIG # End signature block
