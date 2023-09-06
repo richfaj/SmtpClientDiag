@@ -302,7 +302,10 @@ class InternalSmtpClient {
         $this.Writer.Flush()
         $this.ReadResponse()
 
-        if ($this.ResponseCode -ne 250) {
+        if ($this.ResponseCode -eq 430 -and $($this.LastSmtpResponse.Substring(4)).StartsWith("4.2.0 STOREDRV; mailbox logon failure;")) {
+            $this.Logger.LogError("Failed to submit message. Verify that the authenticated user or application has the correct permission to logon to the mailbox.")
+        }
+        elseif ($this.ResponseCode -ne 250) {
             $this.Logger.LogError("Failed to submit message.")
         }
 
