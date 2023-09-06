@@ -192,7 +192,7 @@ function Test-SmtpClientSubmission() {
         }
         # Send mail
         if ($authSuccess -eq $true) {
-            $logger.LogMessage("AUTH LOGIN success", "Verbose", $false, $true)
+            $logger.LogMessage("Authentication successful", "Verbose", $false, $true)
             $smtpClient.SendMail($From, $To)
         }
 
