@@ -24,6 +24,7 @@
     IsAuthBlobValid         : True
     IsAuthTokenValid        : True
 #>
+using module .\Utils.psm1
 function Test-SmtpSaslAuthBlob() {
     [CmdletBinding()]
     param(
@@ -197,24 +198,36 @@ function CheckAccessToken($encodedToken) {
         # If using client credential flow check the roles claim
         if ($isAppAuth) {
             Write-Verbose "Checking roles claim for SMTP.SendAsApp permission."
-            $permissions = $token.roles.Split()
-            if (-not $permissions.Contains("SMTP.SendAsApp")) {
+            if ([string]::IsNullOrEmpty($token.roles)) {
                 $tokenValid = $false
-                Write-Verbose "Not checking scopes claim as this is not user authentication."
-                Write-Verbose "Invalid roles in token. Expected 'SMTP.SendAsApp' but found '$($token.roles)'."
+                Write-Verbose "Roles claim is null or empty."
                 Write-Warning "Required permission for SMTP Client Submission not found in token."
+            }
+            else{
+                $permissions = $token.roles.Split()
+                if (-not $permissions.Contains("SMTP.SendAsApp")) {
+                    $tokenValid = $false
+                    Write-Verbose "Invalid roles in token. Expected 'SMTP.SendAsApp' but found '$($token.roles)'."
+                    Write-Warning "Required permission for SMTP Client Submission not found in token."
+                }
             }
         }
 
         # Else check the scopes claim
         else {
-            Write-Verbose "Not checking roles claim as this is not application authentication."
             Write-Verbose "Checking scopes claim for SMTP.Send permission."
-            $permissions = $token.scp.Split()
-            if (-not $permissions.Contains("SMTP.Send")) {
+            if ([string]::IsNullOrEmpty($token.scp)){
                 $tokenValid = $false
-                Write-Verbose "Invalid scope in token. Expected 'SMTP.Send' but found '$($token.scp)'."
+                Write-Verbose "Scopes claim is null or empty."
                 Write-Warning "Required permission for SMTP Client Submission not found in token."
+            }
+            else{
+                $permissions = $token.scp.Split()
+                if (-not $permissions.Contains("SMTP.Send")) {
+                    $tokenValid = $false
+                    Write-Verbose "Invalid scope in token. Expected 'SMTP.Send' but found '$($token.scp)'."
+                    Write-Warning "Required permission for SMTP Client Submission not found in token."
+                }
             }
         }
 
