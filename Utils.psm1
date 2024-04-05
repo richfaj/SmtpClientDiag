@@ -97,3 +97,28 @@ function RetrieveCertificateFromCertStore($thumbprint) {
     Write-Verbose "Found certificate with thumbprint '$thumbprint' in LocalMachine certificate store."
     return $cert
 }
+
+function Get-TlsVersion([string]$TlsVersion){
+    if($TlsVersion.ToLower() -eq "tls"){
+        $enabledSslProtocols = [System.Security.Authentication.SslProtocols]::Tls
+    }
+    elseif($TlsVersion.ToLower() -eq "tls11"){
+        $enabledSslProtocols = [System.Security.Authentication.SslProtocols]::Tls11
+    }
+    elseif($TlsVersion.ToLower() -eq "tls12"){
+        $enabledSslProtocols = [System.Security.Authentication.SslProtocols]::Tls12
+    }
+    elseif($TlsVersion.ToLower() -eq "tls13"){
+        $enabledSslProtocols = [System.Security.Authentication.SslProtocols]::Tls13
+    }
+    else {
+        <#
+        Default to None if the TlsVersion is not recognized.
+        Per https://learn.microsoft.com/en-us/dotnet/api/system.net.security.sslstream.authenticateasclient
+        none will default to OS default.
+        #>
+        $enabledSslProtocols = [System.Security.Authentication.SslProtocols]::None
+    }
+
+    return $enabledSslProtocols
+}

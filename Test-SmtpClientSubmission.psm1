@@ -16,6 +16,9 @@
 
  .Parameter AcceptUntrustedCertificates
   Disables certificate validation
+  
+ .Parameter TlsVersion
+  Specify the Tls version. If none specified the default OS version is used. Accepted values are tls, tls11, tls12, tls13.
 
  .Parameter SmtpServer
   The remote SMTP server that will be accepting mail.
@@ -89,6 +92,9 @@ function Test-SmtpClientSubmission() {
         [switch] $UseSsl,
         [Parameter(Mandatory = $false)]
         [switch] $AcceptUntrustedCertificates,
+        [Parameter(Mandatory = $false)]
+        [ValidateSet("tls", "tls11", "tls12", "tls13", IgnoreCase = $true)]
+        [string] $TlsVersion,
         [Parameter(Mandatory = $true)]
         [string] $SmtpServer,
         [Parameter(Mandatory = $false)]
@@ -148,6 +154,9 @@ function Test-SmtpClientSubmission() {
         $smtpClient.TimeoutSec = $TimeoutSec
     }
 
+    # Set Tls version
+    [System.Security.Authentication.SslProtocols]$enabledSslProtocols = Get-TlsVersion -TlsVersion $TlsVersion
+
     # Check if hostname is IP address
     $ipv4Regex = '^(?:25[0-5]|2[0-4]\d|[0-1]?\d{1,2})(?:\.(?:25[0-5]|2[0-4]\d|[0-1]?\d{1,2})){3}$'
     if ($SmtpServer -match $ipv4Regex) {
@@ -179,12 +188,12 @@ function Test-SmtpClientSubmission() {
             Import-Module MSAL.PS -ErrorAction Stop
             $token = Get-SmtpAccessToken -ClientId $ClientId -TenantId $TenantId -ClientSecret $ClientSecret -AccessToken $AccessToken -UserName $UserName -VerbosePref $VerbosePreference
 
-            $smtpClient.Connect($SmtpServer, $Port, $UseSsl, $AcceptUntrustedCertificates, $null)
+            $smtpClient.Connect($SmtpServer, $Port, $UseSsl, $AcceptUntrustedCertificates, $null, $enabledSslProtocols)
             $authSuccess = $smtpClient.XOAUTH2Login($UserName, $token)
         }
         # Else if no client id check if credentials are available and use legacy auth
         else {
-            $smtpClient.Connect($SmtpServer, $Port, $UseSsl, $AcceptUntrustedCertificates, $null)
+            $smtpClient.Connect($SmtpServer, $Port, $UseSsl, $AcceptUntrustedCertificates, $null, $enabledSslProtocols)
             if ($null -ne $Credential) {
                 # Legacy auth
                 $authSuccess = $smtpClient.AuthLogin($Credential)
