@@ -193,7 +193,7 @@ function Test-SmtpClientSubmission() {
         }
         # Else if no client id check if credentials are available and use legacy auth
         else {
-            $smtpClient.Connect($SmtpServer, $Port, $UseSsl, $AcceptUntrustedCertificates, $null)
+            $smtpClient.Connect($SmtpServer, $Port, $UseSsl, $AcceptUntrustedCertificates, $null, $enabledSslProtocols)
             if ($null -ne $Credential) {
                 # Legacy auth
                 $authSuccess = $smtpClient.AuthLogin($Credential)

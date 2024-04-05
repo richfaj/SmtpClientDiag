@@ -14,12 +14,7 @@ class InternalSmtpClient {
     InternalSmtpClient ([Logger]$logger) {
         $this.Logger = $logger
     }
-    [void] Connect([string]$smtpServer, [int]$port, [bool]$useSsl, [bool]$acceptUntrustedCertificates, [System.Security.Cryptography.X509Certificates.X509Certificate]$clientCertificate) {
-        # Use OS default TLS settings
-        [System.Security.Authentication.SslProtocols]$enabledSslProtocols = [System.Security.Authentication.SslProtocols]::None
-        Connect($smtpServer, $port, $useSsl, $acceptUntrustedCertificates, $clientCertificate, $enabledSslProtocols)
-    }
-
+    
     [void] Connect([string]$smtpServer, [int]$port, [bool]$useSsl, [bool]$acceptUntrustedCertificates, [System.Security.Cryptography.X509Certificates.X509Certificate]$clientCertificate, [System.Security.Authentication.SslProtocols]$enabledSslProtocols) {
         [bool]$useClientCert = $false
         $this.TimeoutMs = $this.TimeoutSec * 1000
