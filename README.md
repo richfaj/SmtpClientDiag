@@ -55,6 +55,10 @@ Use an alternative timeout value other than the default of 60s. Can be used if t
 
 Ignore certificate validation results and allows the use of untrusted certificates.
 
+> -TlsVersion
+
+Specify the TLS version to use. Your machine must support the TLS version specified.
+
 ## Test-SmtpSaslAuthBlob
 This function will check the auth blob for common issues that will cause authentication issues.
 
