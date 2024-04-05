@@ -17,6 +17,9 @@
  .Parameter CertificateThumbprint
   The client certificate thumbprint to use for authentication.
 
+ .Parameter TlsVersion
+  Specify the Tls version. If none specified the default OS version is used. Accepted values are tls, tls11, tls12, tls13.
+
  .Parameter LogPath
   The path to the log file.
 
@@ -58,6 +61,9 @@ function Test-SmtpClientCertificate() {
         [Parameter(Mandatory = $true)]
         [string] $CertificateThumbprint,
         [Parameter(Mandatory = $false)]
+        [ValidateSet("tls", "tls11", "tls12", "tls13", IgnoreCase = $true)]
+        [string] $TlsVersion,
+        [Parameter(Mandatory = $false)]
         [ValidateScript({
                 if (Test-Path $_ -PathType Container) {
                     $true
@@ -72,6 +78,9 @@ function Test-SmtpClientCertificate() {
     # Check version
     CheckVersionAndWarn
 
+    # Set Tls version
+    [System.Security.Authentication.SslProtocols]$enabledSslProtocols = Get-TlsVersion -TlsVersion $TlsVersion
+
     # Check if running as administrator
     # Elevation is needed to gain access to the certificate private key
 
@@ -85,7 +94,7 @@ function Test-SmtpClientCertificate() {
 
     try {
         $clientCertificate = RetrieveCertificateFromCertStore($CertificateThumbprint)
-        $smtpClient.Connect($SmtpServer, 25, $true, $false, $clientCertificate)
+        $smtpClient.Connect($SmtpServer, 25, $true, $false, $clientCertificate, $enabledSslProtocols)
         $smtpClient.SendMail($From, $To)
     }
     catch {

@@ -14,8 +14,13 @@ class InternalSmtpClient {
     InternalSmtpClient ([Logger]$logger) {
         $this.Logger = $logger
     }
-
     [void] Connect([string]$smtpServer, [int]$port, [bool]$useSsl, [bool]$acceptUntrustedCertificates, [System.Security.Cryptography.X509Certificates.X509Certificate]$clientCertificate) {
+        # Use OS default TLS settings
+        [System.Security.Authentication.SslProtocols]$enabledSslProtocols = [System.Security.Authentication.SslProtocols]::None
+        Connect($smtpServer, $port, $useSsl, $acceptUntrustedCertificates, $clientCertificate, $enabledSslProtocols)
+    }
+
+    [void] Connect([string]$smtpServer, [int]$port, [bool]$useSsl, [bool]$acceptUntrustedCertificates, [System.Security.Cryptography.X509Certificates.X509Certificate]$clientCertificate, [System.Security.Authentication.SslProtocols]$enabledSslProtocols) {
         [bool]$useClientCert = $false
         $this.TimeoutMs = $this.TimeoutSec * 1000
 
@@ -67,10 +72,10 @@ class InternalSmtpClient {
                     if ($useClientCert) {
                         $certcol = New-Object System.Security.Cryptography.X509Certificates.X509CertificateCollection
                         $certcol.Add($clientCertificate)
-                        $sslstream.AuthenticateAsClient($SmtpServer, $certcol, $true)
+                        $sslstream.AuthenticateAsClient($SmtpServer, $certcol, $enabledSslProtocols, $true)
                     }
                     else {
-                        $sslstream.AuthenticateAsClient($SmtpServer)
+                        $sslstream.AuthenticateAsClient($SmtpServer, $null, $enabledSslProtocols, $true)
                     }
 
                     $this.Writer = New-Object System.IO.StreamWriter::($sslstream, [System.Text.Encoding]::ASCII)
