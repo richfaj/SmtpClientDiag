@@ -55,7 +55,7 @@ class InternalSmtpClient {
             if ($this.SessionCapabilities.Contains("STARTTLS")) {
                 $this.SmtpCmd("STARTTLS")
                 if ($this.ResponseCode -eq 220) {
-                    $this.Logger.LogMessage("* Starting TLS negotation")
+                    $this.Logger.LogMessage("* Starting TLS negotiation")
                     if ($AcceptUntrustedCertificates) {
                         $this.Logger.LogMessage("Ignoring certificate validation results.", "Verbose", $false, $true)
                         $sslstream = New-Object System.Net.Security.SslStream::($this.TcpClient.GetStream(), $false, ({ $true } -as [Net.Security.RemoteCertificateValidationCallback]))
