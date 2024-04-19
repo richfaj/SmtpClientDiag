@@ -31,7 +31,7 @@ class Logger {
             $line = $message
         }
         else {
-            $line = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddThh:mm:ss.fffK") + " " + $message
+            $line = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffK") + " " + $message
         }
 
         if (-not $logOnly) {
