@@ -291,15 +291,14 @@ class InternalSmtpClient {
         $message += "`n"
         $message += "`nThis is a test message."
 
-        # Script does not check for chuncking capability as it is not meant to support all MTAs
-        # BDAT is preferred over DATA command
-        $byteCount = [System.Text.Encoding]::ASCII.GetByteCount($message)
-        $command = "BDAT $byteCount LAST"
-
-        $this.SmtpCmd($command)
-        $this.Logger.LogMessage("Writing message to stream...", "Verbose", $false, $true)
-        $this.Writer.Write($message)
-        $this.Writer.Flush()
+        # Check if server supports CHUNKING and send using BDAT command
+        if ($this.ContainsCapability("CHUNKING")) {
+            $this.SendContentUsingBdat($message)
+        }
+        # If capability not found send using DATA command
+        else {
+            $this.SendContentUsingData($message)
+        }
         $this.ReadResponse()
 
         if ($this.ResponseCode -eq 430 -and $($this.LastSmtpResponse.Substring(4)).StartsWith("4.2.0 STOREDRV; mailbox logon failure;")) {
@@ -310,6 +309,29 @@ class InternalSmtpClient {
         }
 
         $this.SmtpCmd("QUIT")
+    }
+
+    [void] SendContentUsingBdat($message)
+    {
+        $byteCount = [System.Text.Encoding]::ASCII.GetByteCount($message)
+        $command = "BDAT $byteCount LAST"
+
+        $this.SmtpCmd($command)
+        $this.Logger.LogMessage("Writing message to stream...", "Verbose", $false, $true)
+        $this.Writer.Write($message)
+        $this.Writer.Flush()
+    }
+
+    [void] SendContentUsingData($message)
+    {
+        $command = "DATA"
+
+        $this.SmtpCmd($command)
+        $this.Logger.LogMessage("Writing message to stream...", "Verbose", $false, $true)
+        $this.Writer.Write($message)
+        $this.Logger.LogMessage("Writing terminator '<CRLF>.<CRLF>' to stream.", "Verbose", $false, $true)
+        $this.Writer.Write("`r`n.`r`n")
+        $this.Writer.Flush()
     }
 
     [void] DisposeResources() {
