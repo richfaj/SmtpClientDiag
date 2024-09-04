@@ -47,7 +47,7 @@ class InternalSmtpClient {
         $this.Reader = New-Object -TypeName System.IO.StreamReader -ArgumentList ($this.TcpClient.GetStream(), [System.Text.Encoding]::ASCII)
         $this.Writer = New-Object -TypeName System.IO.StreamWriter -ArgumentList ($this.TcpClient.GetStream(), [System.Text.Encoding]::ASCII)
 
-        $this.ReadResponse()
+        $this.ReadResponse($false)
         $this.SendEhlo()
 
         if ($useSsl) {
@@ -109,7 +109,7 @@ class InternalSmtpClient {
         }
     }
 
-    [void] ReadResponse() {
+    [void] ReadResponse([bool]$readAllLines) {
         $this.ResponseCode = - 1
         $resp = @()
 
@@ -119,28 +119,21 @@ class InternalSmtpClient {
         }
 
         $line = $this.Reader.ReadLine()
-
-        if ([System.String]::IsNullOrEmpty($line)) {
-            return
-        }
-
         $resp += $line
 
         # Parse response code
         $this.ResponseCode = [System.Int32]::Parse($line.Substring(0, 3))
 
-        # Read all lines
-        while ($this.Reader.Peek() -gt 0) {
-            Write-Debug "StreamReader: Reading more lines..."
-            $line = $this.Reader.ReadLine()
-            if ([System.String]::IsNullOrEmpty($line)) {
-                Write-Error -Message "End of stream."
+        if ($readAllLines){
+            while ($line -like "250-*") {
+                Write-Debug "StreamReader: Reading more lines..."
+                $line = $this.Reader.ReadLine()
+                # Truncate response code and join all server capabilties
+                $resp += $line.Substring(4)
             }
-
-            # If more lines, truncate response code
-            $resp += $line.Substring(4)
+            $this.LastSmtpResponse = $resp -join ','            
         }
-        $this.LastSmtpResponse = $resp -join ','
+
         $this.Logger.LogMessage("< " + $resp)
     }
 
@@ -154,6 +147,7 @@ class InternalSmtpClient {
         $lines = $this.LastSmtpResponse.Split(',') | Where-Object { ($_) -and ($_ -notcontains "250") }
         $this.SessionCapabilities = $lines
     }
+
     [void] SmtpCmd([string]$command) {
         $this.SmtpCmd($command, $false)
     }
@@ -172,7 +166,11 @@ class InternalSmtpClient {
         $this.Writer.Flush()
 
         if (($command -ne "QUIT") -and (!$command.StartsWith("BDAT"))) {
-            $this.ReadResponse()
+            $this.ReadResponse($false)
+        }
+
+        if ($command -like "EHLO *") {
+            $this.ReadResponse($true)
         }
     }
 
@@ -299,7 +297,7 @@ class InternalSmtpClient {
         else {
             $this.SendContentUsingData($message)
         }
-        $this.ReadResponse()
+        $this.ReadResponse($false)
 
         if ($this.ResponseCode -eq 430 -and $($this.LastSmtpResponse.Substring(4)).StartsWith("4.2.0 STOREDRV; mailbox logon failure;")) {
             $this.Logger.LogError("Failed to submit message. Verify that the authenticated user or application has the correct permission to logon to the mailbox.")
