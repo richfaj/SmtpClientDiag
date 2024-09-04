@@ -29,7 +29,7 @@ class InternalSmtpClient {
         $this.logger.LogMessage("", "Information", $true, $true)
         $this.logger.LogMessage("[Connecting to $SmtpServer" + ":$Port]", "Information", "Yellow", $false, $true)
 
-        $this.TcpClient = New-Object System.Net.Sockets.TcpClient
+        $this.TcpClient = New-Object -TypeName System.Net.Sockets.TcpClient
         $this.TcpClient.ReceiveTimeout = $this.TimeoutMs
         $this.TcpClient.SendTimeout = $this.TimeoutMs
 
@@ -44,8 +44,8 @@ class InternalSmtpClient {
 
         $this.Logger.LogMessage("[Connected]", "Information", "Green", $false, $true)
 
-        $this.Reader = New-Object System.IO.StreamReader::($this.TcpClient.GetStream(), [System.Text.Encoding]::ASCII)
-        $this.Writer = New-Object System.IO.StreamWriter::($this.TcpClient.GetStream(), [System.Text.Encoding]::ASCII)
+        $this.Reader = New-Object -TypeName System.IO.StreamReader -ArgumentList ($this.TcpClient.GetStream(), [System.Text.Encoding]::ASCII)
+        $this.Writer = New-Object -TypeName System.IO.StreamWriter -ArgumentList ($this.TcpClient.GetStream(), [System.Text.Encoding]::ASCII)
 
         $this.ReadResponse()
         $this.SendEhlo()
@@ -58,14 +58,14 @@ class InternalSmtpClient {
                     $this.Logger.LogMessage("* Starting TLS negotiation")
                     if ($AcceptUntrustedCertificates) {
                         $this.Logger.LogMessage("Ignoring certificate validation results.", "Verbose", $false, $true)
-                        $sslstream = New-Object System.Net.Security.SslStream::($this.TcpClient.GetStream(), $false, ({ $true } -as [Net.Security.RemoteCertificateValidationCallback]))
+                        $sslstream = New-Object -TypeName System.Net.Security.SslStream -ArgumentList ($this.TcpClient.GetStream(), $false, ({ $true } -as [Net.Security.RemoteCertificateValidationCallback]))
                     }
                     else {
-                        $sslstream = New-Object System.Net.Security.SslStream::($this.TcpClient.GetStream())
+                        $sslstream = New-Object -TypeName System.Net.Security.SslStream -ArgumentList ($this.TcpClient.GetStream())
                     }
 
                     if ($useClientCert) {
-                        $certcol = New-Object System.Security.Cryptography.X509Certificates.X509CertificateCollection
+                        $certcol = New-Object -TypeName System.Security.Cryptography.X509Certificates.X509CertificateCollection
                         $certcol.Add($clientCertificate)
                         $sslstream.AuthenticateAsClient($SmtpServer, $certcol, $enabledSslProtocols, $true)
                     }
@@ -73,8 +73,8 @@ class InternalSmtpClient {
                         $sslstream.AuthenticateAsClient($SmtpServer, $null, $enabledSslProtocols, $true)
                     }
 
-                    $this.Writer = New-Object System.IO.StreamWriter::($sslstream, [System.Text.Encoding]::ASCII)
-                    $this.Reader = New-Object System.IO.StreamReader::($sslstream, [System.Text.Encoding]::ASCII)
+                    $this.Writer = New-Object -TypeName System.IO.StreamWriter -ArgumentList ($sslstream, [System.Text.Encoding]::ASCII)
+                    $this.Reader = New-Object -TypeName System.IO.StreamReader -ArgumentList ($sslstream, [System.Text.Encoding]::ASCII)
 
                     $this.Logger.LogMessage("* TLS negotiation completed. IgnoreCertValidation:$AcceptUntrustedCertificates CipherAlgorithm:$($sslstream.CipherAlgorithm) HashAlgorithm:$($sslstream.HashAlgorithm) TlsVersion:$($sslstream.SslProtocol)")
                     $this.Logger.LogMessage("* RemoteCertificate: '<S>$($sslstream.RemoteCertificate.Subject)<I>$($sslstream.RemoteCertificate.Issuer)' NotBefore:$($sslstream.RemoteCertificate.GetEffectiveDateString()) NotAfter:$($sslstream.RemoteCertificate.GetExpirationDateString())")
