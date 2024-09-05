@@ -1,6 +1,6 @@
 using module .\Logger.psm1
-Add-Type -Name System.IO
-Add-Type -Name System.Net
+Add-Type -AssemblyName System.IO
+Add-Type -AssemblyName System.Net
 
 class InternalSmtpClient {
     hidden [System.Net.Sockets.TcpClient]$TcpClient
