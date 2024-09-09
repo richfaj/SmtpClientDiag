@@ -1,4 +1,7 @@
 using module .\Logger.psm1
+Add-Type -AssemblyName System.IO
+Add-Type -AssemblyName System.Net
+
 class InternalSmtpClient {
     hidden [System.Net.Sockets.TcpClient]$TcpClient
     hidden [int]$TimeoutMs
@@ -29,7 +32,7 @@ class InternalSmtpClient {
         $this.logger.LogMessage("", "Information", $true, $true)
         $this.logger.LogMessage("[Connecting to $SmtpServer" + ":$Port]", "Information", "Yellow", $false, $true)
 
-        $this.TcpClient = New-Object System.Net.Sockets.TcpClient
+        $this.TcpClient = New-Object -TypeName System.Net.Sockets.TcpClient
         $this.TcpClient.ReceiveTimeout = $this.TimeoutMs
         $this.TcpClient.SendTimeout = $this.TimeoutMs
 
@@ -44,10 +47,10 @@ class InternalSmtpClient {
 
         $this.Logger.LogMessage("[Connected]", "Information", "Green", $false, $true)
 
-        $this.Reader = New-Object System.IO.StreamReader::($this.TcpClient.GetStream(), [System.Text.Encoding]::ASCII)
-        $this.Writer = New-Object System.IO.StreamWriter::($this.TcpClient.GetStream(), [System.Text.Encoding]::ASCII)
+        $this.Reader = New-Object -TypeName System.IO.StreamReader -ArgumentList ($this.TcpClient.GetStream(), [System.Text.Encoding]::ASCII)
+        $this.Writer = New-Object -TypeName System.IO.StreamWriter -ArgumentList ($this.TcpClient.GetStream(), [System.Text.Encoding]::ASCII)
 
-        $this.ReadResponse()
+        $this.ReadResponse($false)
         $this.SendEhlo()
 
         if ($useSsl) {
@@ -58,14 +61,14 @@ class InternalSmtpClient {
                     $this.Logger.LogMessage("* Starting TLS negotiation")
                     if ($AcceptUntrustedCertificates) {
                         $this.Logger.LogMessage("Ignoring certificate validation results.", "Verbose", $false, $true)
-                        $sslstream = New-Object System.Net.Security.SslStream::($this.TcpClient.GetStream(), $false, ({ $true } -as [Net.Security.RemoteCertificateValidationCallback]))
+                        $sslstream = New-Object -TypeName System.Net.Security.SslStream -ArgumentList ($this.TcpClient.GetStream(), $false, ({ $true } -as [Net.Security.RemoteCertificateValidationCallback]))
                     }
                     else {
-                        $sslstream = New-Object System.Net.Security.SslStream::($this.TcpClient.GetStream())
+                        $sslstream = New-Object -TypeName System.Net.Security.SslStream -ArgumentList ($this.TcpClient.GetStream())
                     }
 
                     if ($useClientCert) {
-                        $certcol = New-Object System.Security.Cryptography.X509Certificates.X509CertificateCollection
+                        $certcol = New-Object -TypeName System.Security.Cryptography.X509Certificates.X509CertificateCollection
                         $certcol.Add($clientCertificate)
                         $sslstream.AuthenticateAsClient($SmtpServer, $certcol, $enabledSslProtocols, $true)
                     }
@@ -73,8 +76,8 @@ class InternalSmtpClient {
                         $sslstream.AuthenticateAsClient($SmtpServer, $null, $enabledSslProtocols, $true)
                     }
 
-                    $this.Writer = New-Object System.IO.StreamWriter::($sslstream, [System.Text.Encoding]::ASCII)
-                    $this.Reader = New-Object System.IO.StreamReader::($sslstream, [System.Text.Encoding]::ASCII)
+                    $this.Writer = New-Object -TypeName System.IO.StreamWriter -ArgumentList ($sslstream, [System.Text.Encoding]::ASCII)
+                    $this.Reader = New-Object -TypeName System.IO.StreamReader -ArgumentList ($sslstream, [System.Text.Encoding]::ASCII)
 
                     $this.Logger.LogMessage("* TLS negotiation completed. IgnoreCertValidation:$AcceptUntrustedCertificates CipherAlgorithm:$($sslstream.CipherAlgorithm) HashAlgorithm:$($sslstream.HashAlgorithm) TlsVersion:$($sslstream.SslProtocol)")
                     $this.Logger.LogMessage("* RemoteCertificate: '<S>$($sslstream.RemoteCertificate.Subject)<I>$($sslstream.RemoteCertificate.Issuer)' NotBefore:$($sslstream.RemoteCertificate.GetEffectiveDateString()) NotAfter:$($sslstream.RemoteCertificate.GetExpirationDateString())")
@@ -109,7 +112,7 @@ class InternalSmtpClient {
         }
     }
 
-    [void] ReadResponse() {
+    [void] ReadResponse([bool]$readAllLines) {
         $this.ResponseCode = - 1
         $resp = @()
 
@@ -119,28 +122,21 @@ class InternalSmtpClient {
         }
 
         $line = $this.Reader.ReadLine()
-
-        if ([System.String]::IsNullOrEmpty($line)) {
-            return
-        }
-
         $resp += $line
 
         # Parse response code
         $this.ResponseCode = [System.Int32]::Parse($line.Substring(0, 3))
 
-        # Read all lines
-        while ($this.Reader.Peek() -gt 0) {
-            Write-Debug "StreamReader: Reading more lines..."
-            $line = $this.Reader.ReadLine()
-            if ([System.String]::IsNullOrEmpty($line)) {
-                Write-Error -Message "End of stream."
+        if ($readAllLines){
+            while ($line -like "250-*") {
+                Write-Debug "StreamReader: Reading more lines..."
+                $line = $this.Reader.ReadLine()
+                # Truncate response code and join all server capabilties
+                $resp += $line.Substring(4)
             }
-
-            # If more lines, truncate response code
-            $resp += $line.Substring(4)
+            $this.LastSmtpResponse = $resp -join ','            
         }
-        $this.LastSmtpResponse = $resp -join ','
+
         $this.Logger.LogMessage("< " + $resp)
     }
 
@@ -154,6 +150,7 @@ class InternalSmtpClient {
         $lines = $this.LastSmtpResponse.Split(',') | Where-Object { ($_) -and ($_ -notcontains "250") }
         $this.SessionCapabilities = $lines
     }
+
     [void] SmtpCmd([string]$command) {
         $this.SmtpCmd($command, $false)
     }
@@ -172,7 +169,11 @@ class InternalSmtpClient {
         $this.Writer.Flush()
 
         if (($command -ne "QUIT") -and (!$command.StartsWith("BDAT"))) {
-            $this.ReadResponse()
+            $this.ReadResponse($false)
+        }
+
+        if ($command -like "EHLO *") {
+            $this.ReadResponse($true)
         }
     }
 
@@ -299,7 +300,7 @@ class InternalSmtpClient {
         else {
             $this.SendContentUsingData($message)
         }
-        $this.ReadResponse()
+        $this.ReadResponse($false)
 
         if ($this.ResponseCode -eq 430 -and $($this.LastSmtpResponse.Substring(4)).StartsWith("4.2.0 STOREDRV; mailbox logon failure;")) {
             $this.Logger.LogError("Failed to submit message. Verify that the authenticated user or application has the correct permission to logon to the mailbox.")
