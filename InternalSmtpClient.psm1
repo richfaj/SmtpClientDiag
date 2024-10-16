@@ -134,9 +134,10 @@ class InternalSmtpClient {
                 # Truncate response code and join all server capabilties
                 $resp += $line.Substring(4)
             }
-            $this.LastSmtpResponse = $resp -join ','            
+            $resp = $resp -join ','            
         }
 
+        $this.LastSmtpResponse = $resp
         $this.Logger.LogMessage("< " + $resp)
     }
 
