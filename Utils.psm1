@@ -2,6 +2,7 @@ function CheckVersionAndWarn() {
     [version]$installedVersion = (Get-Module -Name SmtpClientDiag).Version
     [version]$latestVersion;
 
+    Write-Host "SMTP Client Diagnostic Version: $($installedVersion)"
     try {
         # Not using proxy
         $result = Invoke-WebRequest -Uri "https://github.com/richfaj/SmtpClientDiag/releases/latest/download/version.txt" -TimeoutSec 10 -UseBasicParsing
@@ -99,25 +100,19 @@ function RetrieveCertificateFromCertStore($thumbprint) {
 }
 
 function Get-TlsVersion([string]$TlsVersion){
-    if($TlsVersion.ToLower() -eq "tls"){
+    $enabledSslProtocols = $null
+
+    if($TlsVersion -eq "tls"){
         $enabledSslProtocols = [System.Security.Authentication.SslProtocols]::Tls
     }
-    elseif($TlsVersion.ToLower() -eq "tls11"){
+    elseif($TlsVersion -eq "tls11"){
         $enabledSslProtocols = [System.Security.Authentication.SslProtocols]::Tls11
     }
-    elseif($TlsVersion.ToLower() -eq "tls12"){
+    elseif($TlsVersion -eq "tls12"){
         $enabledSslProtocols = [System.Security.Authentication.SslProtocols]::Tls12
     }
-    elseif($TlsVersion.ToLower() -eq "tls13"){
+    elseif($TlsVersion -eq "tls13"){
         $enabledSslProtocols = [System.Security.Authentication.SslProtocols]::Tls13
-    }
-    else {
-        <#
-        Default to None if the TlsVersion is not recognized.
-        Per https://learn.microsoft.com/en-us/dotnet/api/system.net.security.sslstream.authenticateasclient
-        none will default to OS default.
-        #>
-        $enabledSslProtocols = [System.Security.Authentication.SslProtocols]::None
     }
 
     return $enabledSslProtocols

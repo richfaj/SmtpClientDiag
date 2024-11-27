@@ -79,7 +79,7 @@ function Test-SmtpClientCertificate() {
     CheckVersionAndWarn
 
     # Set Tls version
-    [System.Security.Authentication.SslProtocols]$enabledSslProtocols = Get-TlsVersion -TlsVersion $TlsVersion
+    $enabledSslProtocols = Get-TlsVersion -TlsVersion $TlsVersion
 
     # Check if running as administrator
     # Elevation is needed to gain access to the certificate private key
