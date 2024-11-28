@@ -18,7 +18,7 @@ class InternalSmtpClient {
         $this.Logger = $logger
     }
     
-    [void] Connect([string]$smtpServer, [int]$port, [bool]$useSsl, [bool]$acceptUntrustedCertificates, [System.Security.Cryptography.X509Certificates.X509Certificate]$clientCertificate, [System.Security.Authentication.SslProtocols]$enabledSslProtocols) {
+    [void] Connect([string]$smtpServer, [int]$port, [bool]$useSsl, [bool]$acceptUntrustedCertificates, [System.Security.Cryptography.X509Certificates.X509Certificate]$clientCertificate, $enabledSslProtocols) {
         [bool]$useClientCert = $false
         $this.TimeoutMs = $this.TimeoutSec * 1000
 
@@ -66,14 +66,24 @@ class InternalSmtpClient {
                     else {
                         $sslstream = New-Object -TypeName System.Net.Security.SslStream -ArgumentList ($this.TcpClient.GetStream())
                     }
+                    $certcol = $null
 
                     if ($useClientCert) {
                         $certcol = New-Object -TypeName System.Security.Cryptography.X509Certificates.X509CertificateCollection
                         $certcol.Add($clientCertificate)
-                        $sslstream.AuthenticateAsClient($SmtpServer, $certcol, $enabledSslProtocols, $true)
+                    }
+                    <# 
+                        If enabledSslProtocols is null, don't specify an ssl protocol to use.
+                        AuthenticateAsClient will use the OS preferred TLS version
+                        This avoids ArgumentException when using NONE and OS settings disable default tls versions.
+
+                        https://referencesource.microsoft.com/#System/net/System/Net/SecureProtocols/_SslState.cs,164
+                    #>
+                    if ($null -eq $enabledSslProtocols) {
+                        $sslstream.AuthenticateAsClient($SmtpServer, $certcol, $true)
                     }
                     else {
-                        $sslstream.AuthenticateAsClient($SmtpServer, $null, $enabledSslProtocols, $true)
+                        $sslstream.AuthenticateAsClient($SmtpServer, $certcol, $enabledSslProtocols, $true)
                     }
 
                     $this.Writer = New-Object -TypeName System.IO.StreamWriter -ArgumentList ($sslstream, [System.Text.Encoding]::ASCII)
