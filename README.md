@@ -13,13 +13,13 @@ Link: https://learn.microsoft.com/en-us/exchange/client-developer/legacy-protoco
 Execute the cmdlet below to install the module.
 
 ```PowerShell
-Install-Module -Name SmtpClientDiag -MinimumVersion 1.4.0.4 -Scope CurrentUser
+Install-Module -Name SmtpClientDiag -MinimumVersion 1.4.0.5 -Scope CurrentUser
 ```
 
 If you receive an error that the module cannot be found after installation, you may not have access to the location where the module is installed. Alternatively, you can install the module to `AllUsers` scope which will require elevation to install.
 
 ```PowerShell
-Install-Module -Name SmtpClientDiag -MinimumVersion 1.4.0.4 -Scope AllUsers
+Install-Module -Name SmtpClientDiag -MinimumVersion 1.4.0.5 -Scope AllUsers
 ```
 
 [![PSGallery Version](https://img.shields.io/powershellgallery/v/SmtpClientDiag.svg?style=flat&logo=powershell&label=PSGallery%20Version)](https://www.powershellgallery.com/packages/SmtpClientDiag)

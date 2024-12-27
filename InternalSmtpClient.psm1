@@ -141,7 +141,7 @@ class InternalSmtpClient {
             while ($line -like "250-*") {
                 Write-Debug "StreamReader: Reading more lines..."
                 $line = $this.Reader.ReadLine()
-                # Truncate response code and join all server capabilties
+                # Truncate response code and join all server capabilities
                 $resp += $line.Substring(4)
             }
             $resp = $resp -join ','            
@@ -158,8 +158,9 @@ class InternalSmtpClient {
             throw "Unexpected response on EHLO command. Response Code:$($this.ResponseCode)"
         }
 
-        $lines = $this.LastSmtpResponse.Split(',') | Where-Object { ($_) -and ($_ -notcontains "250") }
-        $this.SessionCapabilities = $lines
+        foreach ($c in $this.LastSmtpResponse.Split(',') | Where-Object { ($_) -and ($_ -notcontains "250") }){
+            $this.SessionCapabilities += $c.Replace("250-", "").Trim()
+        }
     }
 
     [void] SmtpCmd([string]$command) {
