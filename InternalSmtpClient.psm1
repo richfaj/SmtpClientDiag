@@ -17,7 +17,7 @@ class InternalSmtpClient {
     InternalSmtpClient ([Logger]$logger) {
         $this.Logger = $logger
     }
-    
+
     [void] Connect([string]$smtpServer, [int]$port, [bool]$useSsl, [bool]$acceptUntrustedCertificates, [System.Security.Cryptography.X509Certificates.X509Certificate]$clientCertificate, $enabledSslProtocols) {
         [bool]$useClientCert = $false
         $this.TimeoutMs = $this.TimeoutSec * 1000
@@ -72,18 +72,26 @@ class InternalSmtpClient {
                         $certcol = New-Object -TypeName System.Security.Cryptography.X509Certificates.X509CertificateCollection
                         $certcol.Add($clientCertificate)
                     }
-                    <# 
+                    <#
                         If enabledSslProtocols is null, don't specify an ssl protocol to use.
                         AuthenticateAsClient will use the OS preferred TLS version
                         This avoids ArgumentException when using NONE and OS settings disable default tls versions.
 
                         https://referencesource.microsoft.com/#System/net/System/Net/SecureProtocols/_SslState.cs,164
                     #>
-                    if ($null -eq $enabledSslProtocols) {
-                        $sslstream.AuthenticateAsClient($SmtpServer, $certcol, $true)
+                    try {
+                        if ($null -eq $enabledSslProtocols) {
+                            $sslstream.AuthenticateAsClient($SmtpServer, $certcol, $true)
+                        }
+                        else {
+                            $sslstream.AuthenticateAsClient($SmtpServer, $certcol, $enabledSslProtocols, $true)
+                        }
                     }
-                    else {
-                        $sslstream.AuthenticateAsClient($SmtpServer, $certcol, $enabledSslProtocols, $true)
+                    # Catch TLS exceptions to provide better guidance and rethrow
+                    catch {
+                        $this.Logger.LogMessage("* .NET Service Point Manager TLS Setting: $([System.Net.ServicePointManager]::SecurityProtocol)", "Warning", $false, $true)
+                        $this.Logger.LogMessage("* TLS authentication failed. Try using an alternate TLS version using the TlsVersion parameter (e.g., -TlsVersion tls12).", "Warning", $false, $true)
+                        throw $_
                     }
 
                     $this.Writer = New-Object -TypeName System.IO.StreamWriter -ArgumentList ($sslstream, [System.Text.Encoding]::ASCII)
@@ -144,7 +152,7 @@ class InternalSmtpClient {
                 # Truncate response code and join all server capabilities
                 $resp += $line.Substring(4)
             }
-            $resp = $resp -join ','            
+            $resp = $resp -join ','
         }
 
         $this.LastSmtpResponse = $resp
