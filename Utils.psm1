@@ -2,7 +2,7 @@ function CheckVersionAndWarn() {
     [version]$installedVersion = (Get-Module -Name SmtpClientDiag).Version
     [version]$latestVersion;
 
-    Write-Host "SMTP Client Diagnostic Version: $($installedVersion)"
+    Write-Output "SMTP Client Diagnostic Version: $($installedVersion)"
     try {
         # Not using proxy
         $result = Invoke-WebRequest -Uri "https://github.com/richfaj/SmtpClientDiag/releases/latest/download/version.txt" -TimeoutSec 10 -UseBasicParsing
@@ -18,24 +18,112 @@ function CheckVersionAndWarn() {
     }
 }
 
-function DecodeBase64Value([string] $value) {
-    if ([string]::IsNullOrEmpty($value)) {
+function DecodeBase64Value {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyString()]
+        [string]$Value,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$AllowUrlSafeEncoding
+    )
+
+    # Handle null or empty input
+    if ([string]::IsNullOrEmpty($Value)) {
+        Write-Verbose "Input value is null or empty, returning null"
         return $null
     }
-    # Token is base64 encoded and must be a multiple of 4 characters in length. Add padding if needed.
-    if ($value.Length % 4 -eq 2) {
-        $value += "=="
+
+    try {
+        # Normalize the input
+        $normalizedValue = Get-NormalizedBase64String -InputString $Value -AllowUrlSafe:$AllowUrlSafeEncoding
+
+        # Add padding if needed
+        $paddedValue = Add-Base64Padding -Base64String $normalizedValue
+
+        # Decode the Base64 string
+        Write-Verbose "Decoding Base64 string of length: $($paddedValue.Length)"
+        $decodedBytes = [System.Convert]::FromBase64String($paddedValue)
+        $decodedText = [System.Text.Encoding]::UTF8.GetString($decodedBytes)
+
+        Write-Verbose "Successfully decoded Base64 string to UTF-8 text (length: $($decodedText.Length))"
+        return $decodedText
     }
-    elseif ($value.Length % 4 -eq 3) {
-        $value += "="
+    catch [System.FormatException] {
+        $errorMsg = "Invalid Base64 format. The input contains invalid characters or is malformed."
+        Write-Verbose "Base64 decode failed: $errorMsg. Input: '$Value'"
+        throw [System.ArgumentException]::new($errorMsg, "Value", $_.Exception)
     }
-    elseif ($value.Length % 4 -ne 0) {
-        Write-Verbose "Failed to decode base64 string: $value"
-        throw "Invalid length for a base64 string."
+    catch [System.ArgumentException] {
+        $errorMsg = "Invalid Base64 string length or format."
+        Write-Verbose "Base64 decode failed: $errorMsg. Input: '$Value'"
+        throw [System.ArgumentException]::new($errorMsg, "Value", $_.Exception)
+    }
+    catch {
+        $errorMsg = "Failed to decode Base64 string: $($_.Exception.Message)"
+        Write-Verbose "Unexpected error during Base64 decode: $errorMsg. Input: '$Value'"
+        throw [System.InvalidOperationException]::new($errorMsg, $_.Exception)
+    }
+}
+
+function Get-NormalizedBase64String {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InputString,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$AllowUrlSafe
+    )
+
+    $result = $InputString.Trim()
+
+    # Convert URL-safe Base64 to standard Base64 if requested
+    if ($AllowUrlSafe) {
+        $result = $result.Replace('-', '+').Replace('_', '/')
+        Write-Verbose "Converted URL-safe Base64 characters to standard format"
     }
 
-    $valueBytes = [System.Convert]::FromBase64String($value)
-    return [System.Text.Encoding]::UTF8.GetString($valueBytes)
+    # Validate Base64 character set
+    if ($result -notmatch '^[A-Za-z0-9+/]*={0,2}$') {
+        throw [System.FormatException]::new("Input contains invalid Base64 characters")
+    }
+
+    return $result
+}
+
+function Add-Base64Padding {
+    [CmdletBinding()]
+    [OutputType([System.String])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Base64String
+    )
+
+    $paddingNeeded = $Base64String.Length % 4
+
+    switch ($paddingNeeded) {
+        0 {
+            Write-Verbose "No padding needed for Base64 string"
+            return $Base64String
+        }
+        1 {
+            # Invalid: Base64 length cannot have remainder of 1 when divided by 4
+            throw [System.ArgumentException]::new("Invalid Base64 string length. Length cannot have a remainder of 1.")
+        }
+        2 {
+            Write-Verbose "Adding 2 padding characters to Base64 string"
+            return $Base64String + "=="
+        }
+        3 {
+            Write-Verbose "Adding 1 padding character to Base64 string"
+            return $Base64String + "="
+        }
+        default {
+            throw [System.InvalidOperationException]::new("Unexpected padding calculation result: $paddingNeeded")
+        }
+    }
 }
 
 function GetCharHexValue([char] $char) {
@@ -99,21 +187,49 @@ function RetrieveCertificateFromCertStore($thumbprint) {
     return $cert
 }
 
-function Get-TlsVersion([string]$TlsVersion){
+function Get-TlsVersion([string]$TlsVersion) {
     $enabledSslProtocols = $null
 
-    if($TlsVersion -eq "tls"){
+    if ($TlsVersion -eq "tls") {
         $enabledSslProtocols = [System.Security.Authentication.SslProtocols]::Tls
     }
-    elseif($TlsVersion -eq "tls11"){
+    elseif ($TlsVersion -eq "tls11") {
         $enabledSslProtocols = [System.Security.Authentication.SslProtocols]::Tls11
     }
-    elseif($TlsVersion -eq "tls12"){
+    elseif ($TlsVersion -eq "tls12") {
         $enabledSslProtocols = [System.Security.Authentication.SslProtocols]::Tls12
     }
-    elseif($TlsVersion -eq "tls13"){
+    elseif ($TlsVersion -eq "tls13") {
         $enabledSslProtocols = [System.Security.Authentication.SslProtocols]::Tls13
     }
 
     return $enabledSslProtocols
+}
+
+function Invoke-DotNetDnsResolver {
+    [CmdletBinding()]
+    [OutputType([System.Object[]], [System.Net.IPAddress[]])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$HostName
+    )
+
+    try {
+        Write-Verbose "Resolving '$HostName' using internal .NET DNS resolver"
+
+        $addresses = [System.Net.Dns]::GetHostAddresses($HostName)
+
+        if ($addresses.Count -gt 0) {
+            Write-Verbose "Successfully resolved $($addresses.Count) address(es) for '$HostName'"
+            return $addresses
+        }
+        else {
+            Write-Verbose "DNS resolution returned no addresses for '$HostName'"
+            return @()
+        }
+    }
+    catch {
+        Write-Verbose "DNS resolution failed for '$HostName': $($_.Exception.Message)"
+        return @()
+    }
 }

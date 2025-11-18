@@ -16,7 +16,7 @@
 
  .Parameter AcceptUntrustedCertificates
   Disables certificate validation
-  
+
  .Parameter TlsVersion
   Specify the Tls version. If none specified the default OS version is used. Accepted values are tls, tls11, tls12, tls13.
 
@@ -150,7 +150,7 @@ function Test-SmtpClientSubmission() {
     CheckVersionAndWarn
     [Logger]$logger = New-Object Logger -ArgumentList $VerbosePreference
     [InternalSmtpClient]$smtpClient = New-Object InternalSmtpClient -ArgumentList $logger
-    if ($TimeoutSec -gt 0){
+    if ($TimeoutSec -gt 0) {
         $smtpClient.TimeoutSec = $TimeoutSec
     }
 
@@ -160,19 +160,22 @@ function Test-SmtpClientSubmission() {
     # Check if hostname is IP address
     $ipv4Regex = '^(?:25[0-5]|2[0-4]\d|[0-1]?\d{1,2})(?:\.(?:25[0-5]|2[0-4]\d|[0-1]?\d{1,2})){3}$'
     if ($SmtpServer -match $ipv4Regex) {
-        $logger.LogMessage("Certificate validation will fail when using an IP address. Consider using a hostname or use -AcceptUntrustedCertificate swtich if testing.", "Warning", $null, $true, $true)
+        $logger.LogMessage("Certificate validation will fail when using an IP address. Consider using a hostname or use -AcceptUntrustedCertificate switch if testing.", "Warning", $null, $true, $true)
     }
     else {
         # Verbose details for name resolution
         $logger.LogMessage("Resolving hostname to IP addresses...", "Information", $true, $true)
         $logger.LogMessage("# DNS Results", "Information", $true, $true)
-        $dns = (Resolve-DnsName -Name $smtpServer -QuickTimeout -ErrorAction SilentlyContinue)
-        if ($null -eq $dns) {
-            $logger.LogMessage("Failed to resolve hostname to IP addresses.", "Error", $null, $true, $true)
+
+        # Use .Net DNS resolver to avoid DnsClient module loading overhead
+        $ipAddresses = Invoke-DotNetDnsResolver -HostName $smtpServer
+        if ($ipAddresses.Count -eq 0) {
+            $logger.LogMessage("No IP addresses resolved for hostname.", "Warning", $null, $true, $true)
         }
         else {
-            $dns | ForEach-Object { if ($null -ne $_.IP4Address) { $logger.LogMessage($_.IP4Address, "Information", $true, $true) } }
-            $dns | ForEach-Object { if ($null -ne $_.IP6Address) { $logger.LogMessage($_.IP6Address, "Information", $true, $true) } }
+            foreach ($ip in $ipAddresses) {
+                $logger.LogMessage("$($ip.ToString())", "Information", $true, $true)
+            }
         }
         $logger.LogMessage("", "Information", $true, $true)
     }
