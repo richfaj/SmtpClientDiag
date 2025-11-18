@@ -9,6 +9,7 @@ The module supports both Basic (AUTH LOGIN) and OAuth (XOAUTH2) authentication. 
 If using Modern Authentication, make sure you have followed the instructions in the document below before testing.
 
 Link: <https://learn.microsoft.com/en-us/exchange/client-developer/legacy-protocols/how-to-authenticate-an-imap-pop-smtp-application-by-using-oauth>
+
 Execute the cmdlet below to install the module.
 
 ```PowerShell

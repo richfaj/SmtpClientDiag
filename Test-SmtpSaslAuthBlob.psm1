@@ -56,7 +56,7 @@ function Test-SmtpSaslAuthBlob {
         [Parameter(Mandatory = $false, Position = 0)]
         [string]$EncodedAuthBlob,
         [Parameter(Mandatory = $false)]
-        [bool]$RbacEnabledApplication
+        [switch]$RbacEnabledApplication
     )
 
     [bool]$script:RbacEnabled = $RbacEnabledApplication
@@ -395,7 +395,7 @@ function Test-TokenClaim {
                 Write-Warning "RBAC enabled application should not have direct SMTP permissions assigned."
                 $validationResults += $false
             }
-            elseif ($script:REQUIRED_APPLICATION_ROLE -notin $roles) {
+            elseif ($script:RbacEnabled -eq $false -and $script:REQUIRED_APPLICATION_ROLE -notin $roles) {
                 Write-Verbose "Required role missing. Expected: '$script:REQUIRED_APPLICATION_ROLE', Found: '$($TokenClaims.roles)'"
                 Write-Warning "Required permission for SMTP Client Submission not found in token."
                 $validationResults += $false
