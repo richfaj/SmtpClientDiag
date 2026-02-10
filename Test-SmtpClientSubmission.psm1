@@ -11,8 +11,11 @@
  .Parameter To
   The To SMTP email address.
 
- .Parameter DisableTls
-  Disables the use of TLS (UseSsl is enabled by default).
+ .Parameter UseSsl
+  [Deprecated] SSL/TLS is enabled by default and exists for backward compatibility with Send-MailMessage; use -DisableTls to turn it off.
+
+  .Parameter DisableTls
+  TLS is enabled by default; use -DisableTls to turn it off.
 
  .Parameter AcceptUntrustedCertificates
   Disables certificate validation
@@ -88,6 +91,8 @@ function Test-SmtpClientSubmission() {
                 }
             })]
         [string] $To,
+        [Parameter(Mandatory = $false)]
+        [switch] $UseSsl,
         [Parameter(Mandatory = $false)]
         [switch] $DisableTls,
         [Parameter(Mandatory = $false)]
@@ -182,6 +187,9 @@ function Test-SmtpClientSubmission() {
 
     try {
         [bool]$authSuccess = $false
+
+        # Preserve UseSsl to avoid breaking existing scripts and to allow for 1:1 correspondence with Send-MailMessage.
+        # Default to UseSsl:$true if not specified (override the default switch value of $false) but not trigger the PSScriptAnalyzer warning for setting a default value on a switch parameter.
         $UseSsl = -not $DisableTls
 
         # Use OAUTH if the client id or access token was supplied
@@ -191,7 +199,7 @@ function Test-SmtpClientSubmission() {
             # Obtain an access token
             Import-Module MSAL.PS -ErrorAction Stop
             $token = Get-SmtpAccessToken -ClientId $ClientId -TenantId $TenantId -ClientSecret $ClientSecret -AccessToken $AccessToken -UserName $UserName -VerbosePref $VerbosePreference
-            
+
             $smtpClient.Connect($SmtpServer, $Port, $UseSsl, $AcceptUntrustedCertificates, $null, $enabledSslProtocols)
             $authSuccess = $smtpClient.XOAUTH2Login($UserName, $token)
         }
