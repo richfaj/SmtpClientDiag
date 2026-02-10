@@ -12,7 +12,7 @@
   The To SMTP email address.
 
  .Parameter UseSsl
-  Enables the use of TLS if supported by the remote MTA.
+  Enables the use of TLS if supported by the remote MTA (enabled by default).
 
  .Parameter AcceptUntrustedCertificates
   Disables certificate validation
@@ -89,7 +89,7 @@ function Test-SmtpClientSubmission() {
             })]
         [string] $To,
         [Parameter(Mandatory = $false)]
-        [switch] $UseSsl,
+        [switch] $UseSsl = $true,
         [Parameter(Mandatory = $false)]
         [switch] $AcceptUntrustedCertificates,
         [Parameter(Mandatory = $false)]
