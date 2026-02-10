@@ -11,8 +11,8 @@
  .Parameter To
   The To SMTP email address.
 
- .Parameter UseSsl
-  Enables the use of TLS if supported by the remote MTA (enabled by default).
+ .Parameter DisableTls
+  Disables the use of TLS (UseSsl is enabled by default).
 
  .Parameter AcceptUntrustedCertificates
   Disables certificate validation
@@ -49,15 +49,15 @@
 
  .Example
    # Submit mail without credentials.
-   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -UseSsl -SmtpServer smtp.office365.com -Port 25 -Force
+   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -SmtpServer smtp.office365.com -Port 25 -Force
 
  .Example
    # Submit mail using legacy authentication.
-   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -UseSsl -SmtpServer smtp.office365.com -Port 587 -Credential <PSCredential>
+   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -SmtpServer smtp.office365.com -Port 587 -Credential <PSCredential>
 
  .Example
    # Submit mail using modern authentication.
-   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -UseSsl -SmtpServer smtp.office365.com -Port 587 -UserName <MailboxSmtp> -ClientId 9954180a-16f4-4683-aaaaaaaaaaaa -TenantId 1da8c747-60dd-4404-8418-aaaaaaaaaaaa
+   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -SmtpServer smtp.office365.com -Port 587 -UserName <MailboxSmtp> -ClientId 9954180a-16f4-4683-aaaaaaaaaaaa -TenantId 1da8c747-60dd-4404-8418-aaaaaaaaaaaa
 #>
 using module .\InternalSmtpClient.psm1
 using module .\Utils.psm1
@@ -89,7 +89,7 @@ function Test-SmtpClientSubmission() {
             })]
         [string] $To,
         [Parameter(Mandatory = $false)]
-        [switch] $UseSsl = $true,
+        [switch] $DisableTls,
         [Parameter(Mandatory = $false)]
         [switch] $AcceptUntrustedCertificates,
         [Parameter(Mandatory = $false)]
@@ -182,6 +182,7 @@ function Test-SmtpClientSubmission() {
 
     try {
         [bool]$authSuccess = $false
+        $UseSsl = -not $DisableTls
 
         # Use OAUTH if the client id or access token was supplied
         if (($null -ne $ClientId) -or (-not [System.String]::IsNullOrEmpty($AccessToken))) {
@@ -190,7 +191,7 @@ function Test-SmtpClientSubmission() {
             # Obtain an access token
             Import-Module MSAL.PS -ErrorAction Stop
             $token = Get-SmtpAccessToken -ClientId $ClientId -TenantId $TenantId -ClientSecret $ClientSecret -AccessToken $AccessToken -UserName $UserName -VerbosePref $VerbosePreference
-
+            
             $smtpClient.Connect($SmtpServer, $Port, $UseSsl, $AcceptUntrustedCertificates, $null, $enabledSslProtocols)
             $authSuccess = $smtpClient.XOAUTH2Login($UserName, $token)
         }
