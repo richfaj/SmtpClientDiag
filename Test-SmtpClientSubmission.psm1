@@ -12,7 +12,10 @@
   The To SMTP email address.
 
  .Parameter UseSsl
-  Enables the use of TLS if supported by the remote MTA.
+  [Deprecated] SSL/TLS is enabled by default and exists for backward compatibility with Send-MailMessage; use -DisableTls to turn it off.
+
+  .Parameter DisableTls
+  TLS is enabled by default; use -DisableTls to turn it off.
 
  .Parameter AcceptUntrustedCertificates
   Disables certificate validation
@@ -49,15 +52,15 @@
 
  .Example
    # Submit mail without credentials.
-   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -UseSsl -SmtpServer smtp.office365.com -Port 25 -Force
+   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -SmtpServer smtp.office365.com -Port 25 -Force
 
  .Example
    # Submit mail using legacy authentication.
-   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -UseSsl -SmtpServer smtp.office365.com -Port 587 -Credential <PSCredential>
+   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -SmtpServer smtp.office365.com -Port 587 -Credential <PSCredential>
 
  .Example
    # Submit mail using modern authentication.
-   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -UseSsl -SmtpServer smtp.office365.com -Port 587 -UserName <MailboxSmtp> -ClientId 9954180a-16f4-4683-aaaaaaaaaaaa -TenantId 1da8c747-60dd-4404-8418-aaaaaaaaaaaa
+   Test-SmtpClientSubmission -From <FromAddress> -To <RecipientAddress> -SmtpServer smtp.office365.com -Port 587 -UserName <MailboxSmtp> -ClientId 9954180a-16f4-4683-aaaaaaaaaaaa -TenantId 1da8c747-60dd-4404-8418-aaaaaaaaaaaa
 #>
 using module .\InternalSmtpClient.psm1
 using module .\Utils.psm1
@@ -90,6 +93,8 @@ function Test-SmtpClientSubmission() {
         [string] $To,
         [Parameter(Mandatory = $false)]
         [switch] $UseSsl,
+        [Parameter(Mandatory = $false)]
+        [switch] $DisableTls,
         [Parameter(Mandatory = $false)]
         [switch] $AcceptUntrustedCertificates,
         [Parameter(Mandatory = $false)]
@@ -182,6 +187,10 @@ function Test-SmtpClientSubmission() {
 
     try {
         [bool]$authSuccess = $false
+
+        # Preserve UseSsl to avoid breaking existing scripts and to allow for 1:1 correspondence with Send-MailMessage.
+        # Default to UseSsl:$true if not specified (override the default switch value of $false) but not trigger the PSScriptAnalyzer warning for setting a default value on a switch parameter.
+        $UseSsl = -not $DisableTls
 
         # Use OAUTH if the client id or access token was supplied
         if (($null -ne $ClientId) -or (-not [System.String]::IsNullOrEmpty($AccessToken))) {
