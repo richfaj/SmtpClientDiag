@@ -159,6 +159,30 @@ function Test-SmtpClientSubmission() {
         $smtpClient.TimeoutSec = $TimeoutSec
     }
 
+    # Log non-sensitive parameter values for diagnostics
+    $logger.LogMessage("# Parameters", "Verbose", $false, $true)
+    $logger.LogMessage("ParameterSetName: $($PSCmdlet.ParameterSetName)", "Verbose", $false, $true)
+    $logger.LogMessage("SmtpServer: $SmtpServer", "Verbose", $false, $true)
+    $logger.LogMessage("Port: $Port", "Verbose", $false, $true)
+    $logger.LogMessage("UseSsl: $UseSsl", "Verbose", $false, $true)
+    $logger.LogMessage("DisableTls: $DisableTls", "Verbose", $false, $true)
+    $logger.LogMessage("AcceptUntrustedCertificates: $AcceptUntrustedCertificates", "Verbose", $false, $true)
+    $logger.LogMessage("TlsVersion: $TlsVersion", "Verbose", $false, $true)
+    $logger.LogMessage("ClientId: $ClientId", "Verbose", $false, $true)
+    $logger.LogMessage("TenantId: $TenantId", "Verbose", $false, $true)
+    $logger.LogMessage("ClientSecret: $(-not [System.String]::IsNullOrEmpty($ClientSecret))", "Verbose", $false, $true)
+    $logger.LogMessage("AccessToken provided: $(-not [System.String]::IsNullOrEmpty($AccessToken))", "Verbose", $false, $true)
+    $logger.LogMessage("Credential provided: $($null -ne $Credential)", "Verbose", $false, $true)
+    $logger.LogMessage("TimeoutSec: $TimeoutSec", "Verbose", $false, $true)
+    $logger.LogMessage("Force: $Force", "Verbose", $false, $true)
+    $logger.LogMessage("LogPath: $LogPath", "Verbose", $false, $true)
+    $logger.LogMessage("", "Verbose", $false, $true)
+
+    # Warn if deprecated -UseSsl parameter was explicitly passed
+    if ($PSBoundParameters.ContainsKey('UseSsl')) {
+        $logger.LogMessage("-UseSsl is deprecated. TLS is enabled by default; use -DisableTls to turn it off.", "Warning", $null, $true, $true)
+    }
+
     # Set Tls version
     $enabledSslProtocols = Get-TlsVersion -TlsVersion $TlsVersion
 
@@ -193,7 +217,7 @@ function Test-SmtpClientSubmission() {
         $UseSsl = -not $DisableTls
 
         # Use OAUTH if the client id or access token was supplied
-        if (($null -ne $ClientId) -or (-not [System.String]::IsNullOrEmpty($AccessToken))) {
+        if (($ClientId -ne [guid]::Empty) -or (-not [System.String]::IsNullOrEmpty($AccessToken))) {
             $logger.LogMessage("[Requesting token]", "Information", "Yellow", $false, $true)
 
             # Obtain an access token
