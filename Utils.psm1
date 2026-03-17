@@ -139,6 +139,13 @@ function Get-SmtpAccessToken() {
         [string]$VerbosePref)
 
     $VerbosePreference = $VerbosePref
+    $verboseFlagEnabled = $VerbosePreference -eq 'Continue'
+
+    Write-Verbose "Get-SmtpAccessToken parameters:"
+    Write-Verbose "  ClientId: '$ClientId' (Type: $($ClientId.GetType().FullName))"
+    Write-Verbose "  TenantId: '$TenantId' (Type: $($TenantId.GetType().FullName))"
+    Write-Verbose "  ClientSecret provided: $($null -ne $ClientSecret)"
+    Write-Verbose "  AccessToken provided: $(-not [System.String]::IsNullOrEmpty($AccessToken))"
 
     # Use supplied token instead if provided
     if (-not [System.String]::IsNullOrEmpty($AccessToken)) {
@@ -151,14 +158,23 @@ function Get-SmtpAccessToken() {
         $token = $null
 
         # Non-interactive login if client secret is provided
-        if (-not [System.String]::IsNullOrEmpty($ClientSecret)) {
+        if ($null -ne $ClientSecret -and $ClientSecret.Length -gt 0) {
             Write-Verbose "Using client secret to obtain access token."
-            $token = Get-MsalToken -ClientId $ClientId -TenantId $TenantId -ClientSecret $ClientSecret -Scope 'https://outlook.office.com/.default'
+            Write-Verbose "Calling Get-MsalToken with ClientId='$ClientId', TenantId='$TenantId', Scope='https://outlook.office.com/.default'"
+            $token = Get-MsalToken -ClientId $ClientId -TenantId $TenantId -ClientSecret $ClientSecret -Scope 'https://outlook.office.com/.default' -Verbose:$verboseFlagEnabled
         }
         else {
             Write-Verbose "Using interactive login to obtain access token."
-            $token = Get-MsalToken -ClientId $ClientId -TenantId $TenantId -Interactive -Scope 'https://outlook.office.com/Smtp.Send' -LoginHint $UserName
+            Write-Verbose "Calling Get-MsalToken with ClientId='$ClientId', TenantId='$TenantId', Scope='https://outlook.office.com/Smtp.Send', LoginHint='$UserName'"
+            $token = Get-MsalToken -ClientId $ClientId -TenantId $TenantId -Interactive -Scope 'https://outlook.office.com/Smtp.Send' -LoginHint $UserName -Verbose:$verboseFlagEnabled
         }
+
+        Write-Verbose "Get-MsalToken returned object of type: $($token.GetType().FullName)"
+        if ($verboseFlagEnabled) {
+            $propNames = ($token | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name) -join ', '
+            Write-Verbose "Token object properties: $propNames"
+        }
+
         if ([System.String]::IsNullOrEmpty($token.AccessToken)) {
             throw "No token was available in the token request result."
         }

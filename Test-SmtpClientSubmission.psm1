@@ -217,7 +217,7 @@ function Test-SmtpClientSubmission() {
         $UseSsl = -not $DisableTls
 
         # Use OAUTH if the client id or access token was supplied
-        if (($ClientId -ne [guid]::Empty) -or (-not [System.String]::IsNullOrEmpty($AccessToken))) {
+        if (($null -ne $ClientId -and $ClientId -ne [guid]::Empty) -or (-not [System.String]::IsNullOrEmpty($AccessToken))) {
             $logger.LogMessage("[Requesting token]", "Information", "Yellow", $false, $true)
 
             # Obtain an access token
